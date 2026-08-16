@@ -1,0 +1,240 @@
+import json
+import logging
+import re
+from datetime import datetime
+
+import httpx
+from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
+def _extract_field(text: str, field: str) -> str | None:
+    patterns = [
+        rf'{field}:"([^"]*)"',
+        rf'{field}:(\d+\.?\d*)',
+        rf'{field}:(\.\d+)',
+    ]
+    for pat in patterns:
+        m = re.search(pat, text)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _extract_float(text: str, field: str) -> float | None:
+    val = _extract_field(text, field)
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except ValueError:
+        return None
+
+
+def _extract_int(text: str, field: str) -> int | None:
+    m = re.search(rf'{field}:"?(\d+)"?', text)
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def _extract_data_from_sveltekit(html: str) -> dict | None:
+    soup = BeautifulSoup(html, "html.parser")
+    for script in soup.find_all("script"):
+        text = script.string or ""
+        if "regularMarketPrice" not in text:
+            continue
+
+        name_match = re.search(r'symbol:\{[^}]*?name:"([^"]+)"', text)
+        ticker_match = re.search(r'exchangeTicker:"([^"]+)"', text)
+
+        return {
+            "name": name_match.group(1) if name_match else None,
+            "exchangeTicker": ticker_match.group(1) if ticker_match else None,
+            "regularMarketPrice": _extract_float(text, "regularMarketPrice"),
+            "dividendYield": _extract_float(text, "dividendYield"),
+            "dividendRate": _extract_float(text, "dividendRate"),
+            "marketCap": _extract_int(text, "marketCap"),
+            "trailingPE": _extract_float(text, "trailingPE"),
+            "sectorName": _extract_field(text, "sectorName"),
+            "industryName": _extract_field(text, "industryName"),
+            "website": _extract_field(text, "website"),
+            "headquarters": _extract_field(text, "headquarters"),
+            "ceo": _extract_field(text, "ceo"),
+            "employees": _extract_int(text, "employees"),
+            "dividendFrequency": _extract_field(text, "dividendFrequency"),
+            "payoutRatio": _extract_float(text, "payoutRatio"),
+            "targetPrice": _extract_float(text, "targetPrice"),
+            "trailingAnnualDividendYield": _extract_float(text, "trailingAnnualDividendYield"),
+            "trailingAnnualDividendRate": _extract_float(text, "trailingAnnualDividendRate"),
+        }
+    return None
+
+
+def _extract_description(html: str) -> str | None:
+    soup = BeautifulSoup(html, "html.parser")
+    section = soup.select_one('section[data-content="company-description"]')
+    if section:
+        p = section.find("p")
+        if p:
+            return p.get_text(strip=True)
+    return None
+
+
+def _parse_dividends_html(html: str) -> list[dict]:
+    soup = BeautifulSoup(html, "html.parser")
+    section = soup.select_one('section[data-content="dividend-payout-history"]')
+    if not section:
+        return []
+
+    table = section.find("table")
+    if not table:
+        return []
+
+    dividends = []
+    for row in table.find_all("tr"):
+        classes = row.get("class", [])
+        if "card-regular" not in classes:
+            continue
+        cells = row.find_all("td")
+        if len(cells) < 3:
+            continue
+        try:
+            ex_date_str = cells[0].get_text(strip=True)
+            pay_date_str = cells[1].get_text(strip=True)
+            amount_str = cells[2].get_text(strip=True).replace("$", "").replace(",", "")
+
+            ex_date = datetime.strptime(ex_date_str, "%d %b %Y").date()
+            pay_date = None
+            if pay_date_str and pay_date_str != "-":
+                try:
+                    pay_date = datetime.strptime(pay_date_str, "%d %b %Y").date()
+                except ValueError:
+                    pass
+            amount = float(amount_str)
+
+            dividends.append({
+                "ex_date": ex_date,
+                "pay_date": pay_date,
+                "amount_per_share": amount,
+                "currency": "SGD",
+            })
+        except (ValueError, IndexError):
+            continue
+
+    return dividends
+
+
+def fetch_stock_from_beansprout(ticker: str) -> dict | None:
+    clean_ticker = ticker.upper()
+    try:
+        with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=15) as client:
+            resp = client.get(f"https://growbeansprout.com/quote/{clean_ticker}")
+            if resp.status_code != 200:
+                logger.warning("BeanSprout returned %d for %s", resp.status_code, clean_ticker)
+                return None
+
+            data = _extract_data_from_sveltekit(resp.text)
+            description = _extract_description(resp.text)
+
+            if not data or not data.get("regularMarketPrice"):
+                logger.warning("No data found for %s", clean_ticker)
+                return None
+
+            market_cap = data.get("marketCap")
+            if isinstance(market_cap, str):
+                try:
+                    market_cap = int(market_cap)
+                except ValueError:
+                    market_cap = None
+
+            is_reit = "realEstateInvestmentTrust" in (resp.text if not data.get("sectorName") else "")
+            sector = data.get("sectorName") or ("Real Estate" if is_reit else None)
+            industry = data.get("industryName") or ("REIT" if is_reit else None)
+
+            return {
+                "ticker": clean_ticker,
+                "name": data.get("name") or clean_ticker,
+                "sector": sector,
+                "industry": industry,
+                "description": description,
+                "website": data.get("website"),
+                "address": data.get("headquarters"),
+                "currency": "SGD",
+                "last_price": data.get("regularMarketPrice"),
+                "forward_dividend_yield": data.get("dividendYield"),
+                "ttm_dividend_yield": data.get("trailingAnnualDividendYield"),
+                "five_year_avg_yield": None,
+                "annual_dividend_rate": data.get("dividendRate"),
+                "ttm_dividend_rate": data.get("trailingAnnualDividendRate"),
+                "dividend_frequency": data.get("dividendFrequency"),
+                "payout_ratio": data.get("payoutRatio"),
+                "market_cap": market_cap,
+                "pe_ratio": data.get("trailingPE"),
+                "is_active": True,
+                "last_updated": datetime.utcnow(),
+            }
+    except Exception:
+        logger.exception("Failed to scrape BeanSprout for %s", clean_ticker)
+        return None
+
+
+def fetch_dividends_from_beansprout(ticker: str) -> list[dict]:
+    clean_ticker = ticker.upper()
+    try:
+        with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=15) as client:
+            resp = client.get(f"https://growbeansprout.com/quote/{clean_ticker}/dividend")
+            if resp.status_code != 200:
+                return []
+            return _parse_dividends_html(resp.text)
+    except Exception:
+        logger.exception("Failed to scrape dividends from BeanSprout for %s", clean_ticker)
+        return []
+
+
+def fetch_price_history_yahoo_chart(ticker: str, period: str = "10y", retries: int = 3) -> list[dict]:
+    clean_ticker = ticker.upper()
+    try:
+        import time as _time
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{clean_ticker}"
+        params = {"range": period, "interval": "1d"}
+        chart_headers = {**HEADERS, "Accept": "application/json, */*"}
+        with httpx.Client(headers=chart_headers, follow_redirects=True, timeout=15) as client:
+            resp = None
+            for attempt in range(retries):
+                resp = client.get(url, params=params)
+                if resp.status_code == 200:
+                    break
+                logger.warning("Yahoo chart API returned %d for %s (attempt %d/%d)", resp.status_code, clean_ticker, attempt + 1, retries)
+                _time.sleep(3 * (attempt + 1))
+            if not resp or resp.status_code != 200:
+                return []
+
+            data = resp.json()
+            result = data.get("chart", {}).get("result", [])
+            if not result:
+                return []
+
+            timestamps = result[0].get("timestamp", [])
+            closes = result[0].get("indicators", {}).get("quote", [{}])[0].get("close", [])
+
+            prices = []
+            for ts, close in zip(timestamps, closes):
+                if close is None:
+                    continue
+                dt = datetime.utcfromtimestamp(ts).date()
+                prices.append({"date": dt, "close_price": round(float(close), 4)})
+            return prices
+    except Exception:
+        logger.exception("Failed to fetch Yahoo chart for %s", clean_ticker)
+        return []
