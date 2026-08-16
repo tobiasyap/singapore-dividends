@@ -192,7 +192,17 @@ async def update_holding(
 
     await db.commit()
     await db.refresh(holding)
-    return holding
+
+    div_result = await db.execute(
+        select(Dividend).where(Dividend.stock_id == holding.stock_id, Dividend.ex_date >= holding.purchase_date)
+    )
+    divs_total = sum(d.amount_per_share * holding.shares for d in div_result.scalars().all())
+    return HoldingResponse(
+        id=holding.id, stock_id=holding.stock_id, shares=holding.shares,
+        cost_per_share=holding.cost_per_share, purchase_date=holding.purchase_date,
+        notes=holding.notes, dividends_received=round(divs_total, 2),
+        stock=StockResponse.model_validate(holding.stock),
+    )
 
 
 @router.delete("/{holding_id}", status_code=204)

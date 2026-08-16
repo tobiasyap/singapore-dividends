@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, Plus, Trash2 } from "lucide-react";
-import { useHoldings, useAddHolding, useDeleteHolding, type GroupedHolding } from "../hooks/useHoldings";
+import { ChevronRight, Plus, Pencil, Check, Trash2 } from "lucide-react";
+import { useHoldings, useAddHolding, useUpdateHolding, useDeleteHolding, type GroupedHolding } from "../hooks/useHoldings";
 import { useStockSearch } from "../hooks/useStocks";
 import { formatCurrency, formatPercent, cn } from "../lib/utils";
 
@@ -15,9 +15,104 @@ function GainCell({ gain, pct }: { gain: number; pct: number }) {
   );
 }
 
+function DivEarnedCell({ amount }: { amount: number }) {
+  return (
+    <td className="px-3 py-2.5 text-right whitespace-nowrap" style={{ color: amount > 0 ? "var(--dvd)" : "var(--text-3)", fontVariantNumeric: "tabular-nums" }}>
+      {amount > 0 ? formatCurrency(amount) : "—"}
+    </td>
+  );
+}
+
+function LotRow({ lot, stock }: {
+  lot: { id: number; shares: number; cost_per_share: number; purchase_date: string; notes: string | null; dividends_received: number };
+  stock: { last_price: number | null; ticker: string; annual_dividend_rate: number | null; forward_dividend_yield: number | null };
+}) {
+  const [editing, setEditing] = useState(false);
+  const [shares, setShares] = useState(String(lot.shares));
+  const [cost, setCost] = useState(String(lot.cost_per_share));
+  const [date, setDate] = useState(lot.purchase_date);
+  const [notes, setNotes] = useState(lot.notes || "");
+  const updateMut = useUpdateHolding();
+  const deleteMut = useDeleteHolding();
+
+  const lotCost = lot.shares * lot.cost_per_share;
+  const lotVal = stock.last_price ? stock.last_price * lot.shares : 0;
+  const lotGain = lotVal - lotCost;
+  const lotPct = lotCost > 0 ? lotGain / lotCost : 0;
+  const lotFwdDiv = stock.annual_dividend_rate ? stock.annual_dividend_rate * lot.shares : 0;
+  const lotFwdYield = stock.forward_dividend_yield;
+  const lotYOC = lotCost > 0 && lotFwdDiv > 0 ? lotFwdDiv / lotCost : null;
+
+  function handleConfirm() {
+    updateMut.mutate(
+      { id: lot.id, shares: Number(shares), cost_per_share: Number(cost), purchase_date: date, notes: notes || undefined },
+      { onSuccess: () => setEditing(false), onError: () => setEditing(false) },
+    );
+  }
+
+  function handleDelete() {
+    deleteMut.mutate(lot.id);
+  }
+
+  const inputCls = "py-1 px-1.5 rounded text-[12px] outline-none w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+  const inputStyle = { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" };
+
+  return (
+    <tr style={{ background: "var(--surface-alt)", fontSize: "12.5px", color: "var(--text-2)" }}>
+      <td className="pl-9 pr-3 py-2"></td>
+      <td className="px-3 py-2" colSpan={2}>
+        <div className="flex items-start gap-2">
+          {!editing ? (
+            <>
+              <button onClick={() => setEditing(true)} className="p-0.5 rounded hover:bg-[var(--accent-s)] shrink-0 mt-0.5" style={{ color: "var(--accent)" }}>
+                <Pencil size={11} />
+              </button>
+              <div>
+                {new Date(lot.purchase_date).toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" })}
+                {lot.notes && <span className="block text-[10.5px] italic" style={{ color: "var(--text-3)" }}>{lot.notes}</span>}
+              </div>
+            </>
+          ) : (
+            <>
+              <button onClick={handleConfirm} disabled={updateMut.isPending} className="p-0.5 rounded hover:bg-[var(--pos-s)] shrink-0 mt-0.5" style={{ color: "var(--pos)" }}>
+                <Check size={12} />
+              </button>
+              <button onClick={handleDelete} className="p-0.5 rounded hover:bg-[var(--neg-s)] shrink-0 mt-0.5" style={{ color: "var(--neg)" }}>
+                <Trash2 size={12} />
+              </button>
+              <div className="flex flex-col gap-1 flex-1">
+                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} style={inputStyle} />
+                <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes..." className={inputCls} style={inputStyle} />
+              </div>
+            </>
+          )}
+        </div>
+      </td>
+      {!editing ? (
+        <>
+          <td className="px-3 py-2 text-right">{lot.shares.toLocaleString()}</td>
+          <td className="px-3 py-2 text-right">{formatCurrency(lot.cost_per_share)}</td>
+        </>
+      ) : (
+        <>
+          <td className="px-3 py-2 text-right"><input type="text" inputMode="numeric" value={shares} onChange={(e) => setShares(e.target.value)} className={`${inputCls} text-right`} style={{ ...inputStyle, width: 70 }} /></td>
+          <td className="px-3 py-2 text-right"><input type="text" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} className={`${inputCls} text-right`} style={{ ...inputStyle, width: 80 }} /></td>
+        </>
+      )}
+      <td className="px-3 py-2 text-right">{formatCurrency(stock.last_price)}</td>
+      <td className="px-3 py-2 text-right">{formatCurrency(lotVal)}</td>
+      <td className="px-3 py-2 text-right" style={{ color: "var(--dvd)" }}>{lotFwdYield ? formatPercent(lotFwdYield) : "—"}</td>
+      <td className="px-3 py-2 text-right" style={{ color: "var(--dvd)" }}>{lotYOC ? formatPercent(lotYOC) : "—"}</td>
+      <td className="px-3 py-2 text-right" style={{ color: "var(--dvd)" }}>{formatCurrency(lotFwdDiv)}</td>
+      <GainCell gain={lotGain} pct={lotPct} />
+      <DivEarnedCell amount={lot.dividends_received} />
+    </tr>
+  );
+}
+
 function HoldingRow({ group }: { group: GroupedHolding }) {
   const [open, setOpen] = useState(false);
-  const deleteMut = useDeleteHolding();
+  const [addLotOpen, setAddLotOpen] = useState(false);
 
   const { stock, total_shares, avg_cost, total_cost, market_value, dividends_received, lots } = group;
   const mktVal = market_value ?? 0;
@@ -25,7 +120,7 @@ function HoldingRow({ group }: { group: GroupedHolding }) {
   const unrealisedPct = total_cost > 0 ? unrealised / total_cost : 0;
   const annDiv = stock.annual_dividend_rate ? stock.annual_dividend_rate * total_shares : 0;
   const yieldOnCost = total_cost > 0 && annDiv > 0 ? annDiv / total_cost : null;
-  const realisedPct = total_cost > 0 ? dividends_received / total_cost : 0;
+  const fwdYield = stock.forward_dividend_yield;
 
   return (
     <>
@@ -43,45 +138,70 @@ function HoldingRow({ group }: { group: GroupedHolding }) {
         <td className="px-3 py-2.5 text-right">{formatCurrency(avg_cost)}</td>
         <td className="px-3 py-2.5 text-right">{formatCurrency(stock.last_price)}</td>
         <td className="px-3 py-2.5 text-right">{formatCurrency(mktVal)}</td>
+        <td className="px-3 py-2.5 text-right" style={{ color: "var(--dvd)" }}>{fwdYield ? formatPercent(fwdYield) : "—"}</td>
         <td className="px-3 py-2.5 text-right" style={{ color: "var(--dvd)" }}>{yieldOnCost ? formatPercent(yieldOnCost) : "—"}</td>
         <td className="px-3 py-2.5 text-right" style={{ color: "var(--dvd)" }}>{formatCurrency(annDiv)}</td>
-        <td className="px-3 py-2.5 text-right" style={{ color: "var(--text-3)" }}>—</td>
         <GainCell gain={unrealised} pct={unrealisedPct} />
-        <GainCell gain={dividends_received} pct={realisedPct} />
+        <DivEarnedCell amount={dividends_received} />
       </tr>
-      {open && lots.map((lot) => {
-        const lotCost = lot.shares * lot.cost_per_share;
-        const lotVal = stock.last_price ? stock.last_price * lot.shares : 0;
-        const lotGain = lotVal - lotCost;
-        const lotPct = lotCost > 0 ? lotGain / lotCost : 0;
-        const lotRealisedPct = lotCost > 0 ? lot.dividends_received / lotCost : 0;
-        return (
-          <tr key={lot.id} style={{ background: "var(--surface-alt)", fontSize: "12.5px", color: "var(--text-2)" }}>
-            <td className="pl-9 pr-3 py-2"></td>
-            <td className="px-3 py-2" colSpan={2}>
-              <div className="flex items-center gap-2">
-                <span>
-                  {new Date(lot.purchase_date).toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" })}
-                  {lot.notes && <span className="block text-[10.5px] italic" style={{ color: "var(--text-3)" }}>{lot.notes}</span>}
-                </span>
-                <button onClick={() => deleteMut.mutate(lot.id)} className="p-1 rounded hover:bg-[var(--neg-s)] ml-auto shrink-0" style={{ color: "var(--neg)" }}>
-                  <Trash2 size={12} />
-                </button>
-              </div>
+      {open && (
+        <>
+          {lots.map((lot) => (
+            <LotRow key={lot.id} lot={lot} stock={stock} />
+          ))}
+          <tr style={{ background: "var(--surface-alt)" }}>
+            <td></td>
+            <td colSpan={11} className="px-3 py-2">
+              <button onClick={() => setAddLotOpen(true)} className="text-[11.5px] font-semibold hover:underline" style={{ color: "var(--accent)" }}>
+                + Add lot for {stock.ticker}
+              </button>
             </td>
-            <td className="px-3 py-2 text-right">{lot.shares.toLocaleString()}</td>
-            <td className="px-3 py-2 text-right">{formatCurrency(lot.cost_per_share)}</td>
-            <td className="px-3 py-2 text-right">{formatCurrency(stock.last_price)}</td>
-            <td className="px-3 py-2 text-right">{formatCurrency(lotVal)}</td>
-            <td className="px-3 py-2 text-right">—</td>
-            <td className="px-3 py-2 text-right">—</td>
-            <td className="px-3 py-2 text-right" style={{ color: "var(--text-3)" }}>—</td>
-            <GainCell gain={lotGain} pct={lotPct} />
-            <GainCell gain={lot.dividends_received} pct={lotRealisedPct} />
           </tr>
-        );
-      })}
+          {addLotOpen && <AddLotInline ticker={stock.ticker} onClose={() => setAddLotOpen(false)} />}
+        </>
+      )}
     </>
+  );
+}
+
+function AddLotInline({ ticker, onClose }: { ticker: string; onClose: () => void }) {
+  const [shares, setShares] = useState("");
+  const [cost, setCost] = useState("");
+  const [date, setDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const addMut = useAddHolding();
+
+  function handleSubmit() {
+    if (!shares || !cost || !date) return;
+    addMut.mutate(
+      { ticker, shares: Number(shares), cost_per_share: Number(cost), purchase_date: date, notes: notes || undefined },
+      { onSuccess: () => onClose() },
+    );
+  }
+
+  const inputCls = "py-1.5 px-2 rounded text-[12px] outline-none";
+  const inputStyle = { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" };
+
+  return (
+    <tr style={{ background: "var(--surface-alt)", fontSize: "12.5px" }}>
+      <td className="pl-9 pr-3 py-2"></td>
+      <td className="px-3 py-2" colSpan={2}>
+        <div className="flex items-center gap-2">
+          <button onClick={handleSubmit} disabled={addMut.isPending || !shares || !cost || !date} className="p-0.5 rounded hover:bg-[var(--pos-s)] shrink-0 disabled:opacity-30" style={{ color: "var(--pos)" }}>
+            <Check size={12} />
+          </button>
+          <div className="flex flex-col gap-1 flex-1">
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} style={inputStyle} />
+            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes..." className={inputCls} style={inputStyle} />
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-2 text-right"><input type="number" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="Qty" className={`${inputCls} text-right w-16`} style={inputStyle} /></td>
+      <td className="px-3 py-2 text-right"><input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="Cost" className={`${inputCls} text-right w-20`} style={inputStyle} /></td>
+      <td colSpan={7} className="px-3 py-2">
+        <button onClick={onClose} className="text-[11px]" style={{ color: "var(--text-3)" }}>Cancel</button>
+      </td>
+    </tr>
   );
 }
 
@@ -159,6 +279,8 @@ function AddTickerModal({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
+const HEADERS = ["", "Symbol", "Name", "Shares", "Avg Cost", "Price", "Mkt Value", "Fwd Yield", "Yield on Cost", "Fwd Div/Yr", "Unrealised Gain", "Divs Earned"];
+
 export function HoldingsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const { data: holdings = [], isLoading } = useHoldings();
@@ -175,10 +297,8 @@ export function HoldingsPage() {
   );
   const totalGain = totals.value - totals.cost;
   const totalGainPct = totals.cost > 0 ? totalGain / totals.cost : 0;
-  const totalYield = totals.value > 0 ? totals.annDiv / totals.value : 0;
-  const totalRealisedPct = totals.cost > 0 ? totals.divsReceived / totals.cost : 0;
-
-  const headers = ["", "Symbol", "Name", "Shares", "Avg Cost", "Price", "Mkt Value", "Yield", "Fwd Ann. Div", "Day Gain", "Unrealised", "Realised"];
+  const totalFwdYield = totals.value > 0 ? totals.annDiv / totals.value : 0;
+  const totalYieldOnCost = totals.cost > 0 ? totals.annDiv / totals.cost : 0;
 
   return (
     <div>
@@ -193,7 +313,7 @@ export function HoldingsPage() {
         <table className="w-full border-collapse" style={{ fontVariantNumeric: "tabular-nums", fontSize: "13px" }}>
           <thead>
             <tr>
-              {headers.map((h, i) => (
+              {HEADERS.map((h, i) => (
                 <th key={i} className={`text-left px-3 py-3 font-semibold uppercase tracking-wide whitespace-nowrap ${i >= 3 ? "text-right" : ""} ${i === 0 ? "w-7" : ""}`} style={{ fontSize: "10.5px", color: "var(--text-3)", borderBottom: "1px solid var(--border)", background: "var(--surface)" }}>
                   {h}
                 </th>
@@ -202,9 +322,9 @@ export function HoldingsPage() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={12} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>Loading...</td></tr>
+              <tr><td colSpan={HEADERS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>Loading...</td></tr>
             ) : holdings.length === 0 ? (
-              <tr><td colSpan={12} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>No holdings yet. Click "Add Ticker" to get started.</td></tr>
+              <tr><td colSpan={HEADERS.length} className="px-3 py-8 text-center" style={{ color: "var(--text-3)" }}>No holdings yet. Click "Add Ticker" to get started.</td></tr>
             ) : (
               holdings.map((g) => <HoldingRow key={g.stock.id} group={g} />)
             )}
@@ -218,11 +338,11 @@ export function HoldingsPage() {
                 <td className="px-3 py-3 text-right"></td>
                 <td className="px-3 py-3 text-right"></td>
                 <td className="px-3 py-3 text-right">{formatCurrency(totals.value)}</td>
-                <td className="px-3 py-3 text-right" style={{ color: "var(--dvd)" }}>{formatPercent(totalYield)}</td>
+                <td className="px-3 py-3 text-right" style={{ color: "var(--dvd)" }}>{formatPercent(totalFwdYield)}</td>
+                <td className="px-3 py-3 text-right" style={{ color: "var(--dvd)" }}>{formatPercent(totalYieldOnCost)}</td>
                 <td className="px-3 py-3 text-right" style={{ color: "var(--dvd)" }}>{formatCurrency(totals.annDiv)}</td>
-                <td className="px-3 py-3 text-right" style={{ color: "var(--text-3)" }}>—</td>
                 <GainCell gain={totalGain} pct={totalGainPct} />
-                <GainCell gain={totals.divsReceived} pct={totalRealisedPct} />
+                <DivEarnedCell amount={totals.divsReceived} />
               </tr>
             </tfoot>
           )}
