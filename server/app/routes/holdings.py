@@ -20,8 +20,7 @@ from app.schemas.holding import (
     HoldingUpdate,
 )
 from app.schemas.stock import StockResponse
-from app.services.beansprout_scraper import fetch_stock_from_beansprout, fetch_dividends_from_beansprout
-from app.services.data_fetcher import upsert_stock, upsert_dividends
+from app.services.ingest import ingest_stock
 
 router = APIRouter(prefix="/api/holdings", tags=["holdings"])
 
@@ -127,14 +126,9 @@ async def add_holding(
     stock = result.scalar_one_or_none()
 
     if not stock:
-        info = fetch_stock_from_beansprout(body.ticker.upper())
-        if not info:
+        stock = await ingest_stock(db, body.ticker.upper(), with_prices=True, price_period="10y")
+        if not stock:
             raise HTTPException(status_code=404, detail="Stock not found on SGX")
-        stock = await upsert_stock(db, info)
-        divs = fetch_dividends_from_beansprout(body.ticker.upper())
-        if divs:
-            await upsert_dividends(db, stock.id, divs)
-        await db.commit()
 
     holding = Holding(
         portfolio_id=portfolio.id,

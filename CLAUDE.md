@@ -26,10 +26,19 @@ Python 3.12 venv at `server/.venv/`. Vite proxies `/api/*` to localhost:8000.
 
 ## Data sources
 
-- **BeanSprout** (growbeansprout.com): Primary source for stock info + dividends. SvelteKit app — data is inline JS, not JSON. Extract with regex. REITs lack `sectorName` — detect via `realEstateInvestmentTrust` field.
-- **Yahoo Chart API** (`query1.finance.yahoo.com/v8/finance/chart/`): Price history. Must send `Accept: application/json` header or you get 406.
-- **yfinance**: Rate-limited from some networks. Use BeanSprout + Yahoo Chart API instead.
-- Incremental price updates: `seed_prices.py` checks latest date in DB, only fetches the missing period.
+One pipeline: `app/services/ingest.py`, entry point `ingest_stock()`. Used by the
+seed scripts *and* the API add-ticker path. See DEVLOG.md for the full design.
+
+- **Yahoo Chart API** (`query1.finance.yahoo.com/v8/finance/chart/`): prices AND
+  dividends (`events=div`, `range=max`) AND `last_price` (latest close). Send
+  `Accept: application/json` or you get 406.
+- **BeanSprout** (growbeansprout.com): company profile only (name, sector, industry,
+  description, website, market cap, PE, frequency). SvelteKit inline-JS, regex-extracted.
+  Its scraped price/yield are unreliable (embedded peer table) — don't use them.
+  REITs lack `sectorName` — detect via `realEstateInvestmentTrust`.
+- **yfinance** (`app/services/yfinance_source.py`): optional fallback only, rate-limited.
+- Yields/rates are **computed** from dividend history (`compute_dividend_metrics`), not scraped.
+- Incremental price updates: `ingest.ingest_prices()` checks latest date in DB, fetches only the gap.
 
 ## Conventions
 

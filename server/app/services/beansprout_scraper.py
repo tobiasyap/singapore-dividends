@@ -16,10 +16,15 @@ HEADERS = {
 
 
 def _extract_field(text: str, field: str) -> str | None:
+    # Order matters: BeanSprout pages embed a peer/screener table where the same
+    # field can appear as a bare integer (e.g. `dividendYield:6`). Fractional
+    # values (`.0454`) belong to the target stock and appear first in the doc,
+    # so try the leading-dot decimal form before the bare-integer form.
     patterns = [
         rf'{field}:"([^"]*)"',
-        rf'{field}:(\d+\.?\d*)',
+        rf'{field}:(\d+\.\d+)',
         rf'{field}:(\.\d+)',
+        rf'{field}:(\d+)',
     ]
     for pat in patterns:
         m = re.search(pat, text)
@@ -101,7 +106,10 @@ def _parse_dividends_html(html: str) -> list[dict]:
     if not table:
         return []
 
-    dividends = []
+    # BeanSprout splits one payout into multiple rows sharing an ex-date (e.g. a
+    # REIT distribution broken into taxable / tax-exempt / capital components).
+    # Aggregate rows by ex-date so each payment is a single dividend record.
+    by_ex_date: dict = {}
     for row in table.find_all("tr"):
         classes = row.get("class", [])
         if "card-regular" not in classes:
@@ -122,17 +130,20 @@ def _parse_dividends_html(html: str) -> list[dict]:
                 except ValueError:
                     pass
             amount = float(amount_str)
-
-            dividends.append({
-                "ex_date": ex_date,
-                "pay_date": pay_date,
-                "amount_per_share": amount,
-                "currency": "SGD",
-            })
         except (ValueError, IndexError):
             continue
 
-    return dividends
+        entry = by_ex_date.setdefault(
+            ex_date, {"ex_date": ex_date, "pay_date": pay_date, "amount_per_share": 0.0, "currency": "SGD"}
+        )
+        entry["amount_per_share"] += amount
+        if pay_date and not entry["pay_date"]:
+            entry["pay_date"] = pay_date
+
+    return [
+        {**d, "amount_per_share": round(d["amount_per_share"], 6)}
+        for d in sorted(by_ex_date.values(), key=lambda d: d["ex_date"], reverse=True)
+    ]
 
 
 def fetch_stock_from_beansprout(ticker: str) -> dict | None:
@@ -202,39 +213,70 @@ def fetch_dividends_from_beansprout(ticker: str) -> list[dict]:
         return []
 
 
-def fetch_price_history_yahoo_chart(ticker: str, period: str = "10y", retries: int = 3) -> list[dict]:
-    clean_ticker = ticker.upper()
+def _yahoo_chart(ticker: str, period: str, events: str | None = None, retries: int = 3) -> dict | None:
+    """Return the raw `chart.result[0]` object from the Yahoo Chart API, or None."""
+    import time as _time
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker.upper()}"
+    params = {"range": period, "interval": "1d"}
+    if events:
+        params["events"] = events
+    chart_headers = {**HEADERS, "Accept": "application/json, */*"}
     try:
-        import time as _time
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{clean_ticker}"
-        params = {"range": period, "interval": "1d"}
-        chart_headers = {**HEADERS, "Accept": "application/json, */*"}
         with httpx.Client(headers=chart_headers, follow_redirects=True, timeout=15) as client:
-            resp = None
             for attempt in range(retries):
                 resp = client.get(url, params=params)
                 if resp.status_code == 200:
-                    break
-                logger.warning("Yahoo chart API returned %d for %s (attempt %d/%d)", resp.status_code, clean_ticker, attempt + 1, retries)
+                    result = resp.json().get("chart", {}).get("result", [])
+                    return result[0] if result else None
+                logger.warning(
+                    "Yahoo chart %d for %s (attempt %d/%d)",
+                    resp.status_code, ticker, attempt + 1, retries,
+                )
                 _time.sleep(3 * (attempt + 1))
-            if not resp or resp.status_code != 200:
-                return []
-
-            data = resp.json()
-            result = data.get("chart", {}).get("result", [])
-            if not result:
-                return []
-
-            timestamps = result[0].get("timestamp", [])
-            closes = result[0].get("indicators", {}).get("quote", [{}])[0].get("close", [])
-
-            prices = []
-            for ts, close in zip(timestamps, closes):
-                if close is None:
-                    continue
-                dt = datetime.utcfromtimestamp(ts).date()
-                prices.append({"date": dt, "close_price": round(float(close), 4)})
-            return prices
     except Exception:
-        logger.exception("Failed to fetch Yahoo chart for %s", clean_ticker)
+        logger.exception("Failed to fetch Yahoo chart for %s", ticker)
+    return None
+
+
+def fetch_price_history_yahoo_chart(ticker: str, period: str = "10y", retries: int = 3) -> list[dict]:
+    result = _yahoo_chart(ticker, period, retries=retries)
+    if not result:
         return []
+    timestamps = result.get("timestamp", [])
+    closes = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
+    prices = []
+    for ts, close in zip(timestamps, closes):
+        if close is None:
+            continue
+        prices.append(
+            {"date": datetime.utcfromtimestamp(ts).date(), "close_price": round(float(close), 4)}
+        )
+    return prices
+
+
+def fetch_dividends_yahoo_chart(ticker: str, period: str = "max", retries: int = 3) -> list[dict]:
+    """Full dividend history from the Yahoo Chart API `events` payload.
+
+    Clean and complete (no split components, no peer-table pollution). The event
+    `date` is the ex-dividend date; Yahoo does not provide the payment date.
+    """
+    result = _yahoo_chart(ticker, period, events="div", retries=retries)
+    if not result:
+        return []
+    raw = result.get("events", {}).get("dividends", {})
+    out = []
+    for ev in raw.values():
+        try:
+            out.append(
+                {
+                    "ex_date": datetime.utcfromtimestamp(ev["date"]).date(),
+                    "pay_date": None,
+                    "amount_per_share": round(float(ev["amount"]), 6),
+                    "currency": "SGD",
+                }
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    out.sort(key=lambda d: d["ex_date"], reverse=True)
+    return out
