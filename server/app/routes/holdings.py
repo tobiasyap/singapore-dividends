@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -20,7 +20,7 @@ from app.schemas.holding import (
     HoldingUpdate,
 )
 from app.schemas.stock import StockResponse
-from app.services.ingest import ingest_stock
+from app.services.ingest import backfill_prices, ingest_stock
 
 router = APIRouter(prefix="/api/holdings", tags=["holdings"])
 
@@ -115,6 +115,7 @@ async def get_holdings(
 @router.post("", response_model=HoldingResponse, status_code=201)
 async def add_holding(
     body: HoldingCreate,
+    background: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -126,9 +127,13 @@ async def add_holding(
     stock = result.scalar_one_or_none()
 
     if not stock:
-        stock = await ingest_stock(db, body.ticker.upper(), with_prices=True, price_period="10y")
+        # First time we've seen this ticker: pull profile + dividends + last
+        # price now (a few seconds), and backfill the full price history after
+        # the response so the user isn't left staring at a spinner.
+        stock = await ingest_stock(db, body.ticker.upper(), with_prices=False)
         if not stock:
             raise HTTPException(status_code=404, detail="Stock not found on SGX")
+        background.add_task(backfill_prices, body.ticker.upper())
 
     holding = Holding(
         portfolio_id=portfolio.id,

@@ -1,4 +1,4 @@
-import json
+import asyncio
 import logging
 import math
 import re
@@ -152,11 +152,11 @@ def _parse_dividends_html(html: str) -> list[dict]:
     ]
 
 
-def fetch_stock_from_beansprout(ticker: str) -> dict | None:
+async def fetch_stock_from_beansprout(ticker: str) -> dict | None:
     clean_ticker = ticker.upper()
     try:
-        with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=15) as client:
-            resp = client.get(f"https://growbeansprout.com/quote/{clean_ticker}")
+        async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=15) as client:
+            resp = await client.get(f"https://growbeansprout.com/quote/{clean_ticker}")
             if resp.status_code != 200:
                 logger.warning("BeanSprout returned %d for %s", resp.status_code, clean_ticker)
                 return None
@@ -206,11 +206,11 @@ def fetch_stock_from_beansprout(ticker: str) -> dict | None:
         return None
 
 
-def fetch_dividends_from_beansprout(ticker: str) -> list[dict]:
+async def fetch_dividends_from_beansprout(ticker: str) -> list[dict]:
     clean_ticker = ticker.upper()
     try:
-        with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=15) as client:
-            resp = client.get(f"https://growbeansprout.com/quote/{clean_ticker}/dividend")
+        async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=15) as client:
+            resp = await client.get(f"https://growbeansprout.com/quote/{clean_ticker}/dividend")
             if resp.status_code != 200:
                 return []
             return _parse_dividends_html(resp.text)
@@ -219,19 +219,17 @@ def fetch_dividends_from_beansprout(ticker: str) -> list[dict]:
         return []
 
 
-def _yahoo_chart(ticker: str, period: str, events: str | None = None, retries: int = 3) -> dict | None:
+async def _yahoo_chart(ticker: str, period: str, events: str | None = None, retries: int = 3) -> dict | None:
     """Return the raw `chart.result[0]` object from the Yahoo Chart API, or None."""
-    import time as _time
-
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker.upper()}"
     params = {"range": period, "interval": "1d"}
     if events:
         params["events"] = events
     chart_headers = {**HEADERS, "Accept": "application/json, */*"}
     try:
-        with httpx.Client(headers=chart_headers, follow_redirects=True, timeout=15) as client:
+        async with httpx.AsyncClient(headers=chart_headers, follow_redirects=True, timeout=15) as client:
             for attempt in range(retries):
-                resp = client.get(url, params=params)
+                resp = await client.get(url, params=params)
                 if resp.status_code == 200:
                     result = resp.json().get("chart", {}).get("result", [])
                     return result[0] if result else None
@@ -239,14 +237,14 @@ def _yahoo_chart(ticker: str, period: str, events: str | None = None, retries: i
                     "Yahoo chart %d for %s (attempt %d/%d)",
                     resp.status_code, ticker, attempt + 1, retries,
                 )
-                _time.sleep(3 * (attempt + 1))
+                await asyncio.sleep(3 * (attempt + 1))
     except Exception:
         logger.exception("Failed to fetch Yahoo chart for %s", ticker)
     return None
 
 
-def fetch_price_history_yahoo_chart(ticker: str, period: str = "10y", retries: int = 3) -> list[dict]:
-    result = _yahoo_chart(ticker, period, retries=retries)
+async def fetch_price_history_yahoo_chart(ticker: str, period: str = "10y", retries: int = 3) -> list[dict]:
+    result = await _yahoo_chart(ticker, period, retries=retries)
     if not result:
         return []
     timestamps = result.get("timestamp", [])
@@ -261,13 +259,13 @@ def fetch_price_history_yahoo_chart(ticker: str, period: str = "10y", retries: i
     return prices
 
 
-def fetch_dividends_yahoo_chart(ticker: str, period: str = "max", retries: int = 3) -> list[dict]:
+async def fetch_dividends_yahoo_chart(ticker: str, period: str = "max", retries: int = 3) -> list[dict]:
     """Full dividend history from the Yahoo Chart API `events` payload.
 
     Clean and complete (no split components, no peer-table pollution). The event
     `date` is the ex-dividend date; Yahoo does not provide the payment date.
     """
-    result = _yahoo_chart(ticker, period, events="div", retries=retries)
+    result = await _yahoo_chart(ticker, period, events="div", retries=retries)
     if not result:
         return []
     raw = result.get("events", {}).get("dividends", {})

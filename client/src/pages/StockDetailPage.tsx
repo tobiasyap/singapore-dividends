@@ -98,20 +98,27 @@ export function StockDetailPage() {
             </button>
           ))}
         </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={prices}>
-            <defs>
-              <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.15} />
-                <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickFormatter={(v) => formatChartDate(v, period)} interval={getTickInterval(period, prices.length)} />
-            <YAxis tick={{ fontSize: 10, fill: "var(--text-3)" }} domain={["auto", "auto"]} tickFormatter={(v) => `$${v}`} width={50} />
-            <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={(v) => [formatCurrency(Number(v)), "Price"]} labelFormatter={(l) => formatDate(String(l))} />
-            <Area type="monotone" dataKey="close_price" stroke="var(--accent)" strokeWidth={2} fill="url(#priceGrad)" />
-          </AreaChart>
-        </ResponsiveContainer>
+        {/* Mount the chart only once data is in and the card has been laid out,
+            so ResponsiveContainer measures a real width (it otherwise catches a
+            collapsed width on first paint and renders squished). */}
+        <div style={{ height: 200 }}>
+          {prices.length > 0 && (
+            <ResponsiveContainer width="100%" height="100%" debounce={50}>
+              <AreaChart data={prices}>
+                <defs>
+                  <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.15} />
+                    <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickFormatter={(v) => formatChartDate(v, period)} interval={getTickInterval(period, prices.length)} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--text-3)" }} domain={["auto", "auto"]} tickFormatter={(v) => `$${v}`} width={50} />
+                <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={(v) => [formatCurrency(Number(v)), "Price"]} labelFormatter={(l) => formatDate(String(l))} />
+                <Area type="monotone" dataKey="close_price" stroke="var(--accent)" strokeWidth={2} fill="url(#priceGrad)" isAnimationActive={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
       </div>
 
       {/* Annual Dividend Per Share + Yield combo chart */}
@@ -168,22 +175,24 @@ export function StockDetailPage() {
                 </div>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={200}>
-              <ComposedChart data={chartData} barSize={28}>
-                <XAxis dataKey="year" tick={{ fontSize: 11, fill: "var(--text-3)" }} />
-                <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickFormatter={(v) => `$${v}`} width={40} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickFormatter={(v) => `${v}%`} width={40} />
-                <Tooltip
-                  contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-                  formatter={(v, name) => {
-                    if (name === "dps") return [formatDividendAmount(Number(v)), "Div/Share"];
-                    return [`${Number(v).toFixed(2)}%`, "Yield"];
-                  }}
-                />
-                <Bar yAxisId="left" dataKey="dps" radius={[4, 4, 0, 0]} fill="var(--dvd)" />
-                <Line yAxisId="right" dataKey="yieldPct" type="monotone" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3, fill: "var(--accent)" }} connectNulls />
-              </ComposedChart>
-            </ResponsiveContainer>
+            <div style={{ height: 200 }}>
+              <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                <ComposedChart data={chartData} barSize={28}>
+                  <XAxis dataKey="year" tick={{ fontSize: 11, fill: "var(--text-3)" }} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickFormatter={(v) => `$${v}`} width={40} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickFormatter={(v) => `${v}%`} width={40} />
+                  <Tooltip
+                    contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
+                    formatter={(v, name) => {
+                      if (name === "dps") return [formatDividendAmount(Number(v)), "Div/Share"];
+                      return [`${Number(v).toFixed(2)}%`, "Yield"];
+                    }}
+                  />
+                  <Bar yAxisId="left" dataKey="dps" radius={[4, 4, 0, 0]} fill="var(--dvd)" isAnimationActive={false} />
+                  <Line yAxisId="right" dataKey="yieldPct" type="monotone" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3, fill: "var(--accent)" }} connectNulls isAnimationActive={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         );
       })()}

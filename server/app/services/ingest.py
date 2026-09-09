@@ -23,6 +23,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import async_session
 from app.models.daily_price import DailyPrice
 from app.models.dividend import Dividend
 from app.models.stock import Stock
@@ -248,9 +249,9 @@ _BEANSPROUT_FIELDS = (
 )
 
 
-def fetch_stock(ticker: str) -> dict | None:
+async def fetch_stock(ticker: str) -> dict | None:
     """Company profile from BeanSprout, normalized to the Stock column shape."""
-    raw = fetch_stock_from_beansprout(ticker)
+    raw = await fetch_stock_from_beansprout(ticker)
     if not raw:
         return None
     raw["name"] = clean_name(raw.get("name"), ticker)
@@ -258,27 +259,28 @@ def fetch_stock(ticker: str) -> dict | None:
     return {k: raw[k] for k in _BEANSPROUT_FIELDS if raw.get(k) is not None}
 
 
-def fetch_dividends(ticker: str) -> list[dict]:
+async def fetch_dividends(ticker: str) -> list[dict]:
     """Dividend history.
 
     Yahoo Chart API is the source of truth for amounts and full history; Yahoo
     does not provide payment dates, so those are enriched from BeanSprout by
     matching ex-dates. Falls back entirely to BeanSprout if Yahoo returns nothing.
     """
-    divs = fetch_dividends_yahoo_chart(ticker)
+    divs = await fetch_dividends_yahoo_chart(ticker)
     if not divs:
         logger.info("fetch_dividends: Yahoo empty for %s, using BeanSprout", ticker)
-        return fetch_dividends_from_beansprout(ticker)
+        return await fetch_dividends_from_beansprout(ticker)
 
-    pay_dates = {d["ex_date"]: d["pay_date"] for d in fetch_dividends_from_beansprout(ticker)}
+    bs = await fetch_dividends_from_beansprout(ticker)
+    pay_dates = {d["ex_date"]: d["pay_date"] for d in bs}
     for d in divs:
         if d["pay_date"] is None and pay_dates.get(d["ex_date"]):
             d["pay_date"] = pay_dates[d["ex_date"]]
     return divs
 
 
-def fetch_prices(ticker: str, period: str = "10y") -> list[dict]:
-    return fetch_price_history_yahoo_chart(ticker, period=period)
+async def fetch_prices(ticker: str, period: str = "10y") -> list[dict]:
+    return await fetch_price_history_yahoo_chart(ticker, period=period)
 
 
 async def upsert_stock(db: AsyncSession, data: dict) -> Stock:
@@ -376,7 +378,7 @@ async def ingest_prices(db: AsyncSession, stock: Stock, *, full_period: str = "1
         return 0
 
     period = _period_for_gap((date.today() - latest).days) if latest else full_period
-    prices = fetch_prices(stock.ticker, period=period)
+    prices = await fetch_prices(stock.ticker, period=period)
     if latest:
         prices = [p for p in prices if p["date"] > latest]
     return await upsert_prices(db, stock.id, prices)
@@ -395,18 +397,18 @@ async def ingest_stock(
     could not be resolved from the data source.
     """
     ticker = ticker.upper()
-    info = fetch_stock(ticker)
+    info = await fetch_stock(ticker)
     if not info:
         logger.warning("ingest_stock: no data for %s", ticker)
         return None
     info["ticker"] = ticker
     info["is_active"] = True
 
-    dividends = fetch_dividends(ticker)
+    dividends = await fetch_dividends(ticker)
 
     # Last price from Yahoo -- BeanSprout's scraped price is polluted by the
     # embedded peer table for some tickers (REITs in particular).
-    recent = fetch_prices(ticker, period="5d")
+    recent = await fetch_prices(ticker, period="5d")
     if recent:
         info["last_price"] = recent[-1]["close_price"]
 
@@ -444,6 +446,44 @@ async def ingest_stock(
     return stock
 
 
+async def _stored_dividend_rows(db: AsyncSession, stock_id: int) -> list[dict]:
+    rows = await db.execute(
+        select(Dividend.ex_date, Dividend.amount_per_share).where(Dividend.stock_id == stock_id)
+    )
+    return [{"ex_date": ex, "amount_per_share": amt} for ex, amt in rows]
+
+
+async def _update_five_year_yield(db: AsyncSession, stock: Stock) -> None:
+    fyay = five_year_avg_yield(
+        await _stored_dividend_rows(db, stock.id), await _year_end_closes(db, stock.id)
+    )
+    await db.execute(
+        update(Stock).where(Stock.id == stock.id).values(five_year_avg_yield=fyay)
+    )
+
+
+async def backfill_prices(ticker: str) -> None:
+    """Fetch full price history for a freshly-added stock.
+
+    Runs as a background task after `add_holding` returns, so the request that
+    added the ticker doesn't block on ~2,500 rows of price history. Opens its own
+    session (the request's is already closed by the time this runs).
+    """
+    ticker = ticker.upper()
+    async with async_session() as db:
+        stock = await db.scalar(select(Stock).where(Stock.ticker == ticker))
+        if not stock:
+            return
+        try:
+            n = await ingest_prices(db, stock, full_period="10y")
+            await _update_five_year_yield(db, stock)
+            await db.commit()
+            logger.info("backfill_prices: %s +%d prices", ticker, n)
+        except Exception:
+            await db.rollback()
+            logger.exception("backfill_prices: %s failed", ticker)
+
+
 async def refresh_all(
     db: AsyncSession,
     *,
@@ -474,7 +514,7 @@ async def refresh_all(
                 stock.last_price = latest_close
 
             if info:
-                fresh = fetch_stock(stock.ticker)
+                fresh = await fetch_stock(stock.ticker)
                 if fresh:
                     for key in (
                         "name", "sector", "industry", "description", "website",
@@ -486,7 +526,7 @@ async def refresh_all(
                     stock.last_updated = datetime.utcnow()
 
             if dividends:
-                divs = fetch_dividends(stock.ticker)
+                divs = await fetch_dividends(stock.ticker)
                 await replace_dividends(db, stock.id, divs)
                 if not stock.dividend_frequency and divs:
                     stock.dividend_frequency = infer_frequency([d["ex_date"] for d in divs])
