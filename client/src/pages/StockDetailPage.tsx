@@ -42,6 +42,7 @@ export function StockDetailPage() {
   const metrics = [
     { label: "Forward Yield", value: formatPercent(stock.forward_dividend_yield), color: "var(--dvd)" },
     { label: "TTM Yield", value: formatPercent(stock.ttm_dividend_yield), color: "var(--dvd)" },
+    { label: "5Y Avg Yield", value: formatPercent(stock.five_year_avg_yield), color: "var(--dvd)" },
     { label: "Dividend/Share", value: stock.annual_dividend_rate ? formatDividendAmount(stock.annual_dividend_rate) : "—" },
     { label: "Payout Ratio", value: stock.payout_ratio ? `${(stock.payout_ratio * 100).toFixed(1)}%` : "—" },
     { label: "Frequency", value: stock.dividend_frequency || "—", small: true },

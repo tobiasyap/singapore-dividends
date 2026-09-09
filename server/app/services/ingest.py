@@ -12,13 +12,14 @@ yfinance lives in ``yfinance_source.py`` as an optional fallback; it is
 rate-limited on many networks and is not wired into this pipeline by default.
 """
 
+import asyncio
 import logging
 import re
 from collections import Counter
 from datetime import date, datetime, timedelta
 from math import fsum
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -194,6 +195,48 @@ def compute_dividend_metrics(
             if eps > 0:
                 out["payout_ratio"] = ttm_rate / eps
 
+    return out
+
+
+def five_year_avg_yield(
+    dividends: list[dict], year_end_prices: dict[int, float]
+) -> float | None:
+    """Mean of the last 5 complete calendar years' annual dividend yield.
+
+    Per-year yield = (dividends with ex-date in that year) / (last close of that
+    year) -- the same basis as the annual-yield chart on the stock page. The
+    current (incomplete) year is excluded. Returns None if fewer than 3 of the
+    5 years have both a dividend total and a year-end price.
+    """
+    if not dividends or not year_end_prices:
+        return None
+
+    annual: dict[int, list[float]] = {}
+    for d in dividends:
+        annual.setdefault(d["ex_date"].year, []).append(d["amount_per_share"])
+
+    yields = []
+    for year in range(date.today().year - 5, date.today().year):
+        px = year_end_prices.get(year)
+        if px and px > 0 and year in annual:
+            yields.append(fsum(annual[year]) / px)
+
+    if len(yields) < 3:
+        return None
+    return fsum(yields) / len(yields)
+
+
+async def _year_end_closes(db: AsyncSession, stock_id: int) -> dict[int, float]:
+    """{year: closing price on the last stored trading day of that year}."""
+    since = date(date.today().year - 6, 1, 1)
+    rows = await db.execute(
+        select(DailyPrice.date, DailyPrice.close_price)
+        .where(DailyPrice.stock_id == stock_id, DailyPrice.date >= since)
+        .order_by(DailyPrice.date)
+    )
+    out: dict[int, float] = {}
+    for d, px in rows:
+        out[d.year] = px  # ascending order -> last row for each year wins
     return out
 
 
@@ -389,6 +432,10 @@ async def ingest_stock(
     n_prices = 0
     if with_prices:
         n_prices = await ingest_prices(db, stock, full_period=price_period)
+        fyay = five_year_avg_yield(dividends, await _year_end_closes(db, stock.id))
+        await db.execute(
+            update(Stock).where(Stock.id == stock.id).values(five_year_avg_yield=fyay)
+        )
 
     await db.commit()
     logger.info(
@@ -409,7 +456,9 @@ async def refresh_all(
     stocks = rows.scalars().all()
 
     updated, failed = 0, []
-    for stock in stocks:
+    for i, stock in enumerate(stocks):
+        if i:
+            await asyncio.sleep(1)  # be gentle on the upstream data sources
         try:
             if prices:
                 await ingest_prices(db, stock)
@@ -446,6 +495,9 @@ async def refresh_all(
                     is_reit=stock.industry == "REIT",
                 ).items():
                     setattr(stock, key, val)
+                stock.five_year_avg_yield = five_year_avg_yield(
+                    divs, await _year_end_closes(db, stock.id)
+                )
 
             await db.commit()
             updated += 1

@@ -1,0 +1,49 @@
+name: Refresh market data
+
+# Pulls fresh prices, dividends and company info into Neon via the ingest
+# pipeline. Runs on a schedule and can be triggered manually.
+
+on:
+  schedule:
+    # 10:00 UTC = 18:00 SGT, weekdays -- an hour after the SGX close.
+    # Weekend runs are skipped; the incremental price logic would no-op anyway.
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      prices_only:
+        description: "Only refresh the daily price gap (skip info + dividends)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: server/requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - name: Refresh
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: .
+        run: |
+          if [ "${{ inputs.prices_only }}" = "true" ]; then
+            python -m scripts.refresh --prices-only
+          else
+            python -m scripts.refresh
+          fi
