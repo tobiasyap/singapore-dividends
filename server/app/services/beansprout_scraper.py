@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import re
 from datetime import datetime
 
@@ -134,14 +135,19 @@ def _parse_dividends_html(html: str) -> list[dict]:
             continue
 
         entry = by_ex_date.setdefault(
-            ex_date, {"ex_date": ex_date, "pay_date": pay_date, "amount_per_share": 0.0, "currency": "SGD"}
+            ex_date, {"ex_date": ex_date, "pay_date": pay_date, "_parts": [], "currency": "SGD"}
         )
-        entry["amount_per_share"] += amount
+        entry["_parts"].append(amount)
         if pay_date and not entry["pay_date"]:
             entry["pay_date"] = pay_date
 
     return [
-        {**d, "amount_per_share": round(d["amount_per_share"], 6)}
+        {
+            "ex_date": d["ex_date"],
+            "pay_date": d["pay_date"],
+            "amount_per_share": math.fsum(d["_parts"]),
+            "currency": d["currency"],
+        }
         for d in sorted(by_ex_date.values(), key=lambda d: d["ex_date"], reverse=True)
     ]
 
@@ -250,7 +256,7 @@ def fetch_price_history_yahoo_chart(ticker: str, period: str = "10y", retries: i
         if close is None:
             continue
         prices.append(
-            {"date": datetime.utcfromtimestamp(ts).date(), "close_price": round(float(close), 4)}
+            {"date": datetime.utcfromtimestamp(ts).date(), "close_price": float(close)}
         )
     return prices
 
@@ -272,7 +278,7 @@ def fetch_dividends_yahoo_chart(ticker: str, period: str = "max", retries: int =
                 {
                     "ex_date": datetime.utcfromtimestamp(ev["date"]).date(),
                     "pay_date": None,
-                    "amount_per_share": round(float(ev["amount"]), 6),
+                    "amount_per_share": float(ev["amount"]),
                     "currency": "SGD",
                 }
             )

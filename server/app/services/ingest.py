@@ -4,8 +4,9 @@ One pipeline, one entry point (`ingest_stock`), used by both the seed scripts
 and the API's add-ticker path so every stock is populated the same way.
 
 Sources:
-- BeanSprout (growbeansprout.com) -- company info + full dividend history
-- Yahoo Chart API -- daily close prices
+- Yahoo Chart API -- daily close prices, dividend history, last price
+- BeanSprout (growbeansprout.com) -- company profile only (name, sector, etc.);
+  its scraped price/yield are polluted by an embedded peer table
 
 yfinance lives in ``yfinance_source.py`` as an optional fallback; it is
 rate-limited on many networks and is not wired into this pipeline by default.
@@ -15,6 +16,7 @@ import logging
 import re
 from collections import Counter
 from datetime import date, datetime, timedelta
+from math import fsum
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -127,12 +129,16 @@ def compute_dividend_metrics(
     last_price: float | None,
     frequency: str | None,
     pe_ratio: float | None = None,
+    is_reit: bool = False,
 ) -> dict:
     """Derive dividend rates/yields from the dividend history.
 
     BeanSprout's scraped ``dividendYield`` is unreliable (it sometimes picks up
     a value from an embedded peer-comparison table), so we compute our own from
-    the regular-dividend history, which is parsed from a clean HTML table.
+    the dividend history.
+
+    Values are stored at full precision -- rounding is a presentation concern and
+    small per-share amounts (some REITs pay < $0.01) lose meaning if rounded here.
 
     - ``ttm_*``     : trailing 12 months of ex-dividends
     - ``forward_*`` : the trailing ``payments_per_year`` dividends summed. For a
@@ -147,9 +153,9 @@ def compute_dividend_metrics(
     rows = sorted(dividends, key=lambda d: d["ex_date"], reverse=True)
     today = date.today()
 
-    ttm_rate = round(
-        sum(d["amount_per_share"] for d in rows if d["ex_date"] >= today - timedelta(days=365)),
-        4,
+    # fsum avoids floating-point accumulation error when summing many small amounts
+    ttm_rate = fsum(
+        d["amount_per_share"] for d in rows if d["ex_date"] >= today - timedelta(days=365)
     )
     if ttm_rate > 0:
         out["ttm_dividend_rate"] = ttm_rate
@@ -162,7 +168,7 @@ def compute_dividend_metrics(
     per_year = _PAYMENTS_PER_YEAR.get(frequency)
     n = max(per_year or 0, ttm_count)
     if n and len(rows) >= n:
-        forward_rate = round(sum(d["amount_per_share"] for d in rows[:n]), 4)
+        forward_rate = fsum(d["amount_per_share"] for d in rows[:n])
     elif ttm_rate > 0:
         forward_rate = ttm_rate
     else:
@@ -173,15 +179,20 @@ def compute_dividend_metrics(
 
     if last_price and last_price > 0:
         if forward_rate:
-            out["forward_dividend_yield"] = round(forward_rate / last_price, 4)
+            out["forward_dividend_yield"] = forward_rate / last_price
         if ttm_rate > 0:
-            out["ttm_dividend_yield"] = round(ttm_rate / last_price, 4)
+            out["ttm_dividend_yield"] = ttm_rate / last_price
 
-        # payout ratio = dividends / earnings, with EPS approximated as price / PE
-        if pe_ratio and pe_ratio > 0 and ttm_rate > 0:
+        # payout ratio = dividends / earnings, EPS approximated as price / PE.
+        # Skipped for REITs: their accounting earnings include revaluation and
+        # other non-cash items, so this ratio is meaningless (often > 100%).
+        # REIT payout is on distributable income, which neither source provides.
+        if is_reit:
+            out["payout_ratio"] = None
+        elif pe_ratio and pe_ratio > 0 and ttm_rate > 0:
             eps = last_price / pe_ratio
             if eps > 0:
-                out["payout_ratio"] = round(ttm_rate / eps, 4)
+                out["payout_ratio"] = ttm_rate / eps
 
     return out
 
@@ -362,7 +373,11 @@ async def ingest_stock(
 
     # Compute dividend rates/yields from history (scraped yield is unreliable).
     metrics = compute_dividend_metrics(
-        dividends, info.get("last_price"), info.get("dividend_frequency"), info.get("pe_ratio")
+        dividends,
+        info.get("last_price"),
+        info.get("dividend_frequency"),
+        info.get("pe_ratio"),
+        is_reit=info.get("industry") == "REIT",
     )
     info.update(metrics)
 
@@ -427,7 +442,8 @@ async def refresh_all(
                 if not stock.dividend_frequency and divs:
                     stock.dividend_frequency = infer_frequency([d["ex_date"] for d in divs])
                 for key, val in compute_dividend_metrics(
-                    divs, stock.last_price, stock.dividend_frequency, stock.pe_ratio
+                    divs, stock.last_price, stock.dividend_frequency, stock.pe_ratio,
+                    is_reit=stock.industry == "REIT",
                 ).items():
                     setattr(stock, key, val)
 

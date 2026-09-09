@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Info } from "lucide-react";
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart, ComposedChart, Bar, Line } from "recharts";
 import { useStock, useStockDividends, useStockPrices } from "../hooks/useStocks";
-import { formatCurrency, formatPercent, formatCompact, formatDate } from "../lib/utils";
+import { formatCurrency, formatPercent, formatCompact, formatDate, formatDividendAmount } from "../lib/utils";
 
 const PERIODS = ["1m", "3m", "1y", "5y", "10y", "max"] as const;
 
@@ -42,7 +42,7 @@ export function StockDetailPage() {
   const metrics = [
     { label: "Forward Yield", value: formatPercent(stock.forward_dividend_yield), color: "var(--dvd)" },
     { label: "TTM Yield", value: formatPercent(stock.ttm_dividend_yield), color: "var(--dvd)" },
-    { label: "Dividend/Share", value: stock.annual_dividend_rate ? formatCurrency(stock.annual_dividend_rate) : "—" },
+    { label: "Dividend/Share", value: stock.annual_dividend_rate ? formatDividendAmount(stock.annual_dividend_rate) : "—" },
     { label: "Payout Ratio", value: stock.payout_ratio ? `${(stock.payout_ratio * 100).toFixed(1)}%` : "—" },
     { label: "Frequency", value: stock.dividend_frequency || "—", small: true },
     { label: "Market Cap", value: formatCompact(stock.market_cap), small: true },
@@ -132,10 +132,9 @@ export function StockDetailPage() {
           .sort(([a], [b]) => a.localeCompare(b))
           .slice(-8)
           .map(([year, total]) => {
-            const dps = Math.round(total * 1000) / 1000;
             const endPrice = yearEndPrices[year];
-            const yieldPct = endPrice && endPrice > 0 ? Math.round((total / endPrice) * 10000) / 100 : null;
-            return { year, dps, yieldPct };
+            const yieldPct = endPrice && endPrice > 0 ? (total / endPrice) * 100 : null;
+            return { year, dps: total, yieldPct };
           });
 
         return (
@@ -176,7 +175,7 @@ export function StockDetailPage() {
                 <Tooltip
                   contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
                   formatter={(v, name) => {
-                    if (name === "dps") return [formatCurrency(Number(v)), "Div/Share"];
+                    if (name === "dps") return [formatDividendAmount(Number(v)), "Div/Share"];
                     return [`${Number(v).toFixed(2)}%`, "Yield"];
                   }}
                 />
@@ -222,7 +221,7 @@ export function StockDetailPage() {
               <tr key={d.id} style={{ borderBottom: "1px solid var(--border-s)" }}>
                 <td className="px-4 py-2.5">{formatDate(d.ex_date)}</td>
                 <td className="px-4 py-2.5">{d.pay_date ? formatDate(d.pay_date) : "—"}</td>
-                <td className="px-4 py-2.5 text-right font-semibold" style={{ color: "var(--dvd)" }}>{formatCurrency(d.amount_per_share)}</td>
+                <td className="px-4 py-2.5 text-right font-semibold" style={{ color: "var(--dvd)" }}>{formatDividendAmount(d.amount_per_share)}</td>
               </tr>
             ))}
           </tbody>
