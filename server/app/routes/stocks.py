@@ -32,7 +32,7 @@ async def search_stocks(
         )
     if sector:
         stmt = stmt.where(Stock.sector == sector)
-    stmt = stmt.order_by(Stock.market_cap.desc().nulls_last()).limit(100)
+    stmt = stmt.order_by(Stock.market_cap.desc().nulls_last()).limit(500)
     result = await db.execute(stmt)
     return result.scalars().all()
 

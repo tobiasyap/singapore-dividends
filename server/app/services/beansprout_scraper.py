@@ -259,6 +259,23 @@ async def fetch_price_history_yahoo_chart(ticker: str, period: str = "10y", retr
     return prices
 
 
+async def fetch_quote_yahoo(ticker: str) -> dict | None:
+    """Latest close + trading currency from the Yahoo Chart API `meta` block."""
+    result = await _yahoo_chart(ticker, "5d")
+    if not result:
+        return None
+    meta = result.get("meta", {})
+    closes = [
+        c
+        for c in result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
+        if c is not None
+    ]
+    return {
+        "last_price": float(closes[-1]) if closes else meta.get("regularMarketPrice"),
+        "currency": meta.get("currency"),
+    }
+
+
 async def fetch_dividends_yahoo_chart(ticker: str, period: str = "max", retries: int = 3) -> list[dict]:
     """Full dividend history from the Yahoo Chart API `events` payload.
 

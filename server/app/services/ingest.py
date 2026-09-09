@@ -31,6 +31,7 @@ from app.services.beansprout_scraper import (
     fetch_dividends_from_beansprout,
     fetch_dividends_yahoo_chart,
     fetch_price_history_yahoo_chart,
+    fetch_quote_yahoo,
     fetch_stock_from_beansprout,
 )
 
@@ -406,11 +407,19 @@ async def ingest_stock(
 
     dividends = await fetch_dividends(ticker)
 
-    # Last price from Yahoo -- BeanSprout's scraped price is polluted by the
-    # embedded peer table for some tickers (REITs in particular).
-    recent = await fetch_prices(ticker, period="5d")
-    if recent:
-        info["last_price"] = recent[-1]["close_price"]
+    # Last price + trading currency from Yahoo -- BeanSprout's scraped price is
+    # polluted by the embedded peer table for some tickers (REITs in particular),
+    # and it hardcodes SGD (wrong for the USD/GBP/EUR-denominated SGX REITs).
+    quote = await fetch_quote_yahoo(ticker)
+    if quote:
+        if quote["last_price"] is not None:
+            info["last_price"] = quote["last_price"]
+        if quote["currency"]:
+            info["currency"] = quote["currency"]
+            if quote["currency"] != "SGD":
+                logger.warning(
+                    "ingest_stock: %s trades in %s -- amounts are NOT SGD", ticker, quote["currency"]
+                )
 
     # Fill missing/blank frequency from the actual dividend cadence.
     if not info.get("dividend_frequency") and dividends:

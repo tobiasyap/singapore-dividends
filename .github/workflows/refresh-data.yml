@@ -1,19 +1,22 @@
 name: Refresh market data
 
-# Pulls fresh prices, dividends and company info into Neon via the ingest
-# pipeline. Runs on a schedule and can be triggered manually.
+# Pulls fresh data into Neon via the ingest pipeline.
+#   - weekdays: incremental price gap only (fast, one Yahoo call per stock)
+#   - Sunday:   full refresh (company info + full dividend history + prices)
+# Manual runs can pick either mode.
 
 on:
   schedule:
-    # 10:00 UTC = 18:00 SGT, weekdays -- an hour after the SGX close.
-    # Weekend runs are skipped; the incremental price logic would no-op anyway.
-    - cron: "0 10 * * 1-5"
+    # 10:00 UTC = 18:00 SGT. Mon-Sat: prices only. Sun: full.
+    - cron: "0 10 * * 1-6"
+    - cron: "0 10 * * 0"
   workflow_dispatch:
     inputs:
-      prices_only:
-        description: "Only refresh the daily price gap (skip info + dividends)"
-        type: boolean
-        default: false
+      mode:
+        description: "What to refresh"
+        type: choice
+        default: prices
+        options: [prices, full]
 
 concurrency:
   group: refresh-data
@@ -22,7 +25,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: server
@@ -41,9 +44,13 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONPATH: .
+          # Sunday schedule OR a manual "full" run => full refresh; otherwise prices only.
+          FULL: ${{ github.event.schedule == '0 10 * * 0' || inputs.mode == 'full' }}
         run: |
-          if [ "${{ inputs.prices_only }}" = "true" ]; then
-            python -m scripts.refresh --prices-only
-          else
+          if [ "$FULL" = "true" ]; then
+            echo "full refresh"
             python -m scripts.refresh
+          else
+            echo "prices-only refresh"
+            python -m scripts.refresh --prices-only
           fi
