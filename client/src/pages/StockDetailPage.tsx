@@ -98,12 +98,13 @@ export function StockDetailPage() {
             </button>
           ))}
         </div>
-        {/* Mount the chart only once data is in and the card has been laid out,
-            so ResponsiveContainer measures a real width (it otherwise catches a
-            collapsed width on first paint and renders squished). */}
+        {/* Mount the chart only once data is in, so ResponsiveContainer measures
+            a real width -- it otherwise catches a collapsed width on first paint
+            and renders squished. `key` forces a clean remount per period so the
+            draw animation replays from a correctly-sized container. */}
         <div style={{ height: 200 }}>
           {prices.length > 0 && (
-            <ResponsiveContainer width="100%" height="100%" debounce={50}>
+            <ResponsiveContainer key={period} width="100%" height="100%" debounce={50}>
               <AreaChart data={prices}>
                 <defs>
                   <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
@@ -114,7 +115,7 @@ export function StockDetailPage() {
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickFormatter={(v) => formatChartDate(v, period)} interval={getTickInterval(period, prices.length)} />
                 <YAxis tick={{ fontSize: 10, fill: "var(--text-3)" }} domain={["auto", "auto"]} tickFormatter={(v) => `$${v}`} width={50} />
                 <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={(v) => [formatCurrency(Number(v)), "Price"]} labelFormatter={(l) => formatDate(String(l))} />
-                <Area type="monotone" dataKey="close_price" stroke="var(--accent)" strokeWidth={2} fill="url(#priceGrad)" isAnimationActive={false} />
+                <Area type="monotone" dataKey="close_price" stroke="var(--accent)" strokeWidth={2} fill="url(#priceGrad)" animationDuration={700} />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -188,8 +189,8 @@ export function StockDetailPage() {
                       return [`${Number(v).toFixed(2)}%`, "Yield"];
                     }}
                   />
-                  <Bar yAxisId="left" dataKey="dps" radius={[4, 4, 0, 0]} fill="var(--dvd)" isAnimationActive={false} />
-                  <Line yAxisId="right" dataKey="yieldPct" type="monotone" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3, fill: "var(--accent)" }} connectNulls isAnimationActive={false} />
+                  <Bar yAxisId="left" dataKey="dps" radius={[4, 4, 0, 0]} fill="var(--dvd)" animationDuration={700} />
+                  <Line yAxisId="right" dataKey="yieldPct" type="monotone" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3, fill: "var(--accent)" }} connectNulls animationDuration={700} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
