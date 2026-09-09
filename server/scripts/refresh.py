@@ -14,13 +14,28 @@ import asyncio
 import logging
 import sys
 
-from app.database import async_session
-from app.services.ingest import refresh_all
+from app.config import settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger(__name__)
 
 FAILURE_THRESHOLD = 0.25
+
+
+def _db_fingerprint() -> str:
+    """Scheme + host + length of DATABASE_URL -- no credentials. For CI debugging."""
+    url = settings.database_url.strip()
+    scheme = url.split("://", 1)[0] if "://" in url else "(no ://)"
+    host = url.split("@")[-1].split("/")[0] if "@" in url else "(no @)"
+    return f"scheme={scheme!r} host={host!r} len={len(url)}"
+
+
+# Logged before importing app.database, whose engine is built at import time and
+# would raise here on a malformed URL.
+logger.info("DB %s", _db_fingerprint())
+
+from app.database import async_session  # noqa: E402
+from app.services.ingest import refresh_all  # noqa: E402
 
 
 async def main(prices_only: bool):

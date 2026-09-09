@@ -4,7 +4,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.config import settings
 
-db_url = settings.database_url.split("?")[0]
+# Tolerate a stray wrapping quote or whitespace (common when the URL is pasted
+# into a CI secret), then drop the query string -- asyncpg takes ssl via
+# connect_args, not sslmode= in the URL.
+db_url = settings.database_url.strip().strip('"').strip("'").split("?")[0]
+if "://" not in db_url:
+    raise RuntimeError(
+        "DATABASE_URL is not a valid connection string "
+        f"(got {db_url[:12]!r}...). Expected postgresql+asyncpg://user:pass@host/db"
+    )
 ssl_context = ssl.create_default_context()
 engine = create_async_engine(
     db_url,
