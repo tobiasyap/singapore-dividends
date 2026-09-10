@@ -7,9 +7,10 @@ name: Refresh market data
 
 on:
   schedule:
-    # 10:00 UTC = 18:00 SGT. Mon-Sat: prices only. Sun: full.
-    - cron: "0 10 * * 1-6"
-    - cron: "0 10 * * 0"
+    # ~10:17 UTC = ~18:17 SGT (off-peak minute -- top of the hour is congested
+    # and GitHub delayed our first run ~4h). Mon-Sat: prices only. Sun: full.
+    - cron: "17 10 * * 1-6"
+    - cron: "17 10 * * 0"
   workflow_dispatch:
     inputs:
       mode:
@@ -45,7 +46,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONPATH: .
           # Sunday schedule OR a manual "full" run => full refresh; otherwise prices only.
-          FULL: ${{ github.event.schedule == '0 10 * * 0' || inputs.mode == 'full' }}
+          FULL: ${{ github.event.schedule == '17 10 * * 0' || inputs.mode == 'full' }}
         run: |
           if [ "$FULL" = "true" ]; then
             echo "full refresh"
