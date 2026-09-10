@@ -4,18 +4,22 @@ SG dividend stock portfolio tracker. React + FastAPI + Neon PostgreSQL.
 
 ## Run locally
 
-```bash
-# Backend (from server/)
-.venv\Scripts\uvicorn app.main:app --reload --port 8000
+```powershell
+.\dev.ps1          # starts backend :8000 + frontend :5173, each in its own window
+.\dev.ps1 -Stop    # stops both
+```
 
+Or manually:
+
+```powershell
+# Backend (from server/)
+.\.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
 # Frontend (from client/)
 npx vite --port 5173
-
-# Kill stale processes
-Get-Process -Name "python*" | Stop-Process -Force
 ```
 
 Python 3.12 venv at `server/.venv/`. Vite proxies `/api/*` to localhost:8000.
+If `python`/`node` aren't found, restart the terminal (winget installs need a fresh PATH).
 
 ## Tech stack
 
