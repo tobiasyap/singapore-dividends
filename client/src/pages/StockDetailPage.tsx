@@ -39,14 +39,15 @@ export function StockDetailPage() {
     return <p style={{ color: "var(--text-3)" }}>Loading...</p>;
   }
 
+  const ccy = stock.currency || "SGD";
   const metrics = [
     { label: "Forward Yield", value: formatPercent(stock.forward_dividend_yield), color: "var(--dvd)" },
     { label: "TTM Yield", value: formatPercent(stock.ttm_dividend_yield), color: "var(--dvd)" },
     { label: "5Y Avg Yield", value: formatPercent(stock.five_year_avg_yield), color: "var(--dvd)" },
-    { label: "Dividend/Share", value: stock.annual_dividend_rate ? formatDividendAmount(stock.annual_dividend_rate) : "—" },
+    { label: "Dividend/Share", value: stock.annual_dividend_rate ? formatDividendAmount(stock.annual_dividend_rate, ccy) : "—" },
     { label: "Payout Ratio", value: stock.payout_ratio ? `${(stock.payout_ratio * 100).toFixed(1)}%` : "—" },
     { label: "Frequency", value: stock.dividend_frequency || "—", small: true },
-    { label: "Market Cap", value: formatCompact(stock.market_cap), small: true },
+    { label: "Market Cap", value: formatCompact(stock.market_cap, ccy), small: true },
     { label: "P/E Ratio", value: stock.pe_ratio ? stock.pe_ratio.toFixed(1) : "—" },
   ];
 
@@ -61,8 +62,13 @@ export function StockDetailPage() {
           <h1 className="text-[24px] font-bold tracking-tight flex items-center gap-2.5">
             {stock.name} <span className="text-[14px] font-medium" style={{ color: "var(--text-2)" }}>{stock.ticker}</span>
           </h1>
-          <div className="mt-1">
-            <span className="text-[30px] font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{formatCurrency(stock.last_price)}</span>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-[30px] font-bold" style={{ fontVariantNumeric: "tabular-nums" }}>{formatCurrency(stock.last_price, ccy)}</span>
+            {ccy !== "SGD" && (
+              <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "var(--accent-s)", color: "var(--accent)" }}>
+                {ccy}
+              </span>
+            )}
           </div>
           <p className="text-[12px] mt-1" style={{ color: "var(--text-3)" }}>
             {stock.sector} · {stock.industry} · SGX
@@ -114,7 +120,7 @@ export function StockDetailPage() {
                 </defs>
                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--text-3)" }} tickFormatter={(v) => formatChartDate(v, period)} interval={getTickInterval(period, prices.length)} />
                 <YAxis tick={{ fontSize: 10, fill: "var(--text-3)" }} domain={["auto", "auto"]} tickFormatter={(v) => `$${v}`} width={50} />
-                <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={(v) => [formatCurrency(Number(v)), "Price"]} labelFormatter={(l) => formatDate(String(l))} />
+                <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }} formatter={(v) => [formatCurrency(Number(v), ccy), "Price"]} labelFormatter={(l) => formatDate(String(l))} />
                 <Area type="monotone" dataKey="close_price" stroke="var(--accent)" strokeWidth={2} fill="url(#priceGrad)" animationDuration={700} />
               </AreaChart>
             </ResponsiveContainer>
@@ -168,7 +174,7 @@ export function StockDetailPage() {
               <div className="flex gap-4 text-[10.5px]">
                 <div className="flex items-center gap-1.5">
                   <div className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--dvd)" }} />
-                  <span style={{ color: "var(--text-3)" }}>Div/Share (SGD)</span>
+                  <span style={{ color: "var(--text-3)" }}>Div/Share ({ccy})</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <div className="w-3 h-0.5 rounded" style={{ background: "var(--accent)" }} />
@@ -185,7 +191,7 @@ export function StockDetailPage() {
                   <Tooltip
                     contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
                     formatter={(v, name) => {
-                      if (name === "dps") return [formatDividendAmount(Number(v)), "Div/Share"];
+                      if (name === "dps") return [formatDividendAmount(Number(v), ccy), "Div/Share"];
                       return [`${Number(v).toFixed(2)}%`, "Yield"];
                     }}
                   />
@@ -232,7 +238,7 @@ export function StockDetailPage() {
               <tr key={d.id} style={{ borderBottom: "1px solid var(--border-s)" }}>
                 <td className="px-4 py-2.5">{formatDate(d.ex_date)}</td>
                 <td className="px-4 py-2.5">{d.pay_date ? formatDate(d.pay_date) : "—"}</td>
-                <td className="px-4 py-2.5 text-right font-semibold" style={{ color: "var(--dvd)" }}>{formatDividendAmount(d.amount_per_share)}</td>
+                <td className="px-4 py-2.5 text-right font-semibold" style={{ color: "var(--dvd)" }}>{formatDividendAmount(d.amount_per_share, d.currency)}</td>
               </tr>
             ))}
           </tbody>

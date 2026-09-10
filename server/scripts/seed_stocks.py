@@ -6,14 +6,12 @@ Idempotent -- safe to re-run; existing stocks are refreshed in place.
     python -m scripts.seed_stocks D05.SI O39.SI   # just these
 
 The list below was built by surveying BeanSprout's /reits and /securities/stocks
-directories through the pipeline (2026-09) and keeping SGD-denominated names that
-have paid a dividend within the last ~15 months.
+directories through the pipeline (2026-09) and keeping names that have paid a
+dividend within the last ~15 months.
 
-Deliberately excluded until the app handles multi-currency (Yahoo reports their
-prices/dividends in USD/GBP/EUR): the US/UK/EU REITs (Prime US, KORE US, United
-Hampshire, Elite UK, NTT DC, Digital Core, Acrophyte, Stoneweg Europe) and the
-USD-denominated blue chips Hongkong Land (H78), Jardine Matheson (J36), DFI
-Retail (D01) and Hutchison Port Holdings Trust (NS8U).
+Some names trade in USD/GBP/EUR -- their prices and dividends are stored and
+shown in that currency; aggregated views (holdings, portfolio) convert to SGD
+at the spot rate (see services/fx.py).
 
 Anything not listed here can still be pulled in on demand via the add-ticker flow.
 """
@@ -43,6 +41,9 @@ STOCKS = [
     "F34.SI",   # Wilmar International
     "BS6.SI",   # Yangzijiang Shipbuilding
     "C07.SI",   # Jardine Cycle & Carriage
+    "J36.SI",   # Jardine Matheson (USD)
+    "H78.SI",   # Hongkong Land (USD)
+    "D01.SI",   # DFI Retail Group (USD)
     "Y92.SI",   # Thai Beverage
     "U96.SI",   # Sembcorp Industries
     "C09.SI",   # City Developments
@@ -128,12 +129,22 @@ REITS = [
     "AW9U.SI",  # First REIT
     "UD1U.SI",  # IREIT Global
     "DHLU.SI",  # Daiwa House Logistics Trust
+    # Foreign-currency REITs (prices/dividends in the currency shown)
+    "DCRU.SI",  # Digital Core REIT (USD)
+    "NTDU.SI",  # NTT DC REIT (USD)
+    "OXMU.SI",  # Prime US REIT (USD)
+    "CMOU.SI",  # KORE US REIT (USD)
+    "ODBU.SI",  # United Hampshire US REIT (USD)
+    "XZL.SI",   # Acrophyte Hospitality Trust (USD)
+    "MXNU.SI",  # Elite UK REIT (GBP)
+    "SET.SI",   # Stoneweg Europe Stapled Trust (EUR)
 ]
 
 # Business trusts
 TRUSTS = [
     "CJLU.SI",  # NetLink NBN Trust
     "A7RU.SI",  # Keppel Infrastructure Trust
+    "NS8U.SI",  # Hutchison Port Holdings Trust (USD)
 ]
 
 SGX_DIVIDEND_TICKERS = STOCKS + REITS + TRUSTS

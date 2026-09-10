@@ -7,6 +7,7 @@ interface StockSearchResult {
   ticker: string;
   name: string;
   sector: string | null;
+  currency: string;
   last_price: number | null;
   forward_dividend_yield: number | null;
   ttm_dividend_yield: number | null;

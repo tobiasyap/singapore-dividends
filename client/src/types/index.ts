@@ -19,6 +19,7 @@ export interface Stock {
   description: string | null;
   website: string | null;
   address: string | null;
+  currency: string;
   last_price: number | null;
   forward_dividend_yield: number | null;
   ttm_dividend_yield: number | null;

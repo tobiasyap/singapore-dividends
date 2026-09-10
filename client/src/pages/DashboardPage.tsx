@@ -34,7 +34,10 @@ export function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-[22px] font-bold tracking-tight mb-6">Portfolio Overview</h1>
+      <h1 className="text-[22px] font-bold tracking-tight mb-1.5">Portfolio Overview</h1>
+      <p className="text-[11.5px] mb-6" style={{ color: "var(--text-3)" }}>
+        All values in SGD. Foreign-currency holdings are converted at today's rate.
+      </p>
 
       <div className="grid gap-3.5 mb-6" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
         <StatCard label="Total Value" value={formatCurrency(portfolio.total_value)} sub={`${gainSign}${formatCurrency(portfolio.unrealised_gain)} (${gainSign}${(portfolio.unrealised_gain_pct * 100).toFixed(1)}%)`} />

@@ -5,5 +5,15 @@ from app.models.dividend import Dividend
 from app.models.daily_price import DailyPrice
 from app.models.portfolio import Portfolio
 from app.models.holding import Holding
+from app.models.fx_rate import FxRate
 
-__all__ = ["Base", "User", "Stock", "Dividend", "DailyPrice", "Portfolio", "Holding"]
+__all__ = [
+    "Base",
+    "User",
+    "Stock",
+    "Dividend",
+    "DailyPrice",
+    "Portfolio",
+    "Holding",
+    "FxRate",
+]

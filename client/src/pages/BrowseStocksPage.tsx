@@ -79,10 +79,10 @@ export function BrowseStocksPage() {
                   </td>
                   <td className="px-3 py-2.5">{s.name}</td>
                   <td className="px-3 py-2.5" style={{ color: "var(--text-2)" }}>{s.sector || "—"}</td>
-                  <td className="px-3 py-2.5 text-right">{formatCurrency(s.last_price)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{formatCurrency(s.last_price, s.currency)}</td>
                   <td className="px-3 py-2.5 text-right" style={{ color: "var(--dvd)" }}>{formatPercent(s.forward_dividend_yield)}</td>
                   <td className="px-3 py-2.5 text-right">{formatPercent(s.ttm_dividend_yield)}</td>
-                  <td className="px-3 py-2.5 text-right">{formatCompact(s.market_cap)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{formatCompact(s.market_cap, s.currency)}</td>
                 </tr>
               ))
             )}

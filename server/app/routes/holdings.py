@@ -20,9 +20,47 @@ from app.schemas.holding import (
     HoldingUpdate,
 )
 from app.schemas.stock import StockResponse
+from app.services.fx import load_rates, to_sgd
 from app.services.ingest import backfill_prices, ingest_stock
 
 router = APIRouter(prefix="/api/holdings", tags=["holdings"])
+
+
+def _stock_in_sgd(stock: Stock, rates: dict[str, float]) -> StockResponse:
+    """StockResponse with the currency-denominated fields converted to SGD.
+
+    Used inside the holdings view, which is all-SGD. Yields/ratios are unchanged.
+    """
+    data = StockResponse.model_validate(stock).model_dump()
+    cur = stock.currency or "SGD"
+    for field in ("last_price", "annual_dividend_rate", "ttm_dividend_rate"):
+        data[field] = to_sgd(data[field], cur, rates)
+    if data.get("market_cap") is not None:
+        data["market_cap"] = int(to_sgd(data["market_cap"], cur, rates))
+    data["currency"] = "SGD"
+    return StockResponse(**data)
+
+
+async def _holding_response_sgd(db: AsyncSession, h: Holding, rates: dict[str, float]) -> HoldingResponse:
+    cur = h.stock.currency or "SGD"
+    divs = await db.execute(
+        select(Dividend).where(
+            Dividend.stock_id == h.stock_id, Dividend.ex_date >= h.purchase_date
+        )
+    )
+    divs_total = sum(
+        to_sgd(d.amount_per_share, d.currency, rates) * h.shares for d in divs.scalars()
+    )
+    return HoldingResponse(
+        id=h.id,
+        stock_id=h.stock_id,
+        shares=h.shares,
+        cost_per_share=round(to_sgd(h.cost_per_share, cur, rates), 4),
+        purchase_date=h.purchase_date,
+        notes=h.notes,
+        dividends_received=round(divs_total, 2),
+        stock=_stock_in_sgd(h.stock, rates),
+    )
 
 
 async def _get_portfolio(db: AsyncSession, user: User) -> Portfolio:
@@ -51,6 +89,11 @@ async def get_holdings(
     )
     holdings = result.scalars().all()
 
+    # Holdings view is all-SGD (a lot's cost_per_share is stored in the stock's
+    # listing currency; foreign dividends/prices likewise). Convert on read at
+    # the latest spot rate.
+    rates = await load_rates(db)
+
     stock_ids = list({h.stock_id for h in holdings})
     div_result = await db.execute(
         select(Dividend).where(Dividend.stock_id.in_(stock_ids)).order_by(Dividend.ex_date)
@@ -64,7 +107,7 @@ async def get_holdings(
         total = 0.0
         for d in divs_by_stock.get(holding.stock_id, []):
             if d.ex_date >= holding.purchase_date:
-                total += d.amount_per_share * holding.shares
+                total += to_sgd(d.amount_per_share, d.currency, rates) * holding.shares
         return round(total, 2)
 
     grouped: dict[int, list[Holding]] = defaultdict(list)
@@ -74,10 +117,12 @@ async def get_holdings(
     out: list[GroupedHolding] = []
     for stock_id, lots in grouped.items():
         stock = lots[0].stock
+        cur = stock.currency or "SGD"
+        stock_sgd = _stock_in_sgd(stock, rates)
         total_shares = sum(l.shares for l in lots)
-        total_cost = sum(l.shares * l.cost_per_share for l in lots)
+        total_cost = sum(l.shares * to_sgd(l.cost_per_share, cur, rates) for l in lots)
         avg_cost = total_cost / total_shares if total_shares else 0
-        market_value = (stock.last_price * total_shares) if stock.last_price else None
+        market_value = (stock_sgd.last_price * total_shares) if stock_sgd.last_price else None
 
         lot_responses = []
         group_divs = 0.0
@@ -88,17 +133,17 @@ async def get_holdings(
                 id=l.id,
                 stock_id=l.stock_id,
                 shares=l.shares,
-                cost_per_share=l.cost_per_share,
+                cost_per_share=round(to_sgd(l.cost_per_share, cur, rates), 4),
                 purchase_date=l.purchase_date,
                 notes=l.notes,
                 dividends_received=lot_divs,
-                stock=StockResponse.model_validate(stock),
+                stock=stock_sgd,
             )
             lot_responses.append(lr)
 
         out.append(
             GroupedHolding(
-                stock=StockResponse.model_validate(stock),
+                stock=stock_sgd,
                 total_shares=total_shares,
                 avg_cost=round(avg_cost, 4),
                 total_cost=round(total_cost, 2),
@@ -152,15 +197,7 @@ async def add_holding(
         .options(selectinload(Holding.stock))
     )
     h = result.scalar_one()
-    div_result = await db.execute(
-        select(Dividend).where(Dividend.stock_id == h.stock_id, Dividend.ex_date >= h.purchase_date)
-    )
-    divs_total = sum(d.amount_per_share * h.shares for d in div_result.scalars().all())
-    return HoldingResponse(
-        id=h.id, stock_id=h.stock_id, shares=h.shares, cost_per_share=h.cost_per_share,
-        purchase_date=h.purchase_date, notes=h.notes, dividends_received=round(divs_total, 2),
-        stock=StockResponse.model_validate(h.stock),
-    )
+    return await _holding_response_sgd(db, h, await load_rates(db))
 
 
 @router.put("/{holding_id}", response_model=HoldingResponse)
@@ -191,17 +228,7 @@ async def update_holding(
 
     await db.commit()
     await db.refresh(holding)
-
-    div_result = await db.execute(
-        select(Dividend).where(Dividend.stock_id == holding.stock_id, Dividend.ex_date >= holding.purchase_date)
-    )
-    divs_total = sum(d.amount_per_share * holding.shares for d in div_result.scalars().all())
-    return HoldingResponse(
-        id=holding.id, stock_id=holding.stock_id, shares=holding.shares,
-        cost_per_share=holding.cost_per_share, purchase_date=holding.purchase_date,
-        notes=holding.notes, dividends_received=round(divs_total, 2),
-        stock=StockResponse.model_validate(holding.stock),
-    )
+    return await _holding_response_sgd(db, holding, await load_rates(db))
 
 
 @router.delete("/{holding_id}", status_code=204)

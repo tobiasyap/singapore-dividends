@@ -19,6 +19,7 @@ from app.schemas.portfolio import (
     PortfolioOverview,
     SectorAllocation,
 )
+from app.services.fx import load_rates, to_sgd
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -53,6 +54,7 @@ async def get_portfolio_overview(
         .options(selectinload(Holding.stock))
     )
     holdings = result.scalars().all()
+    rates = await load_rates(db)  # portfolio totals are all in SGD
 
     total_value = 0.0
     total_cost = 0.0
@@ -60,15 +62,16 @@ async def get_portfolio_overview(
     sector_values: dict[str, float] = defaultdict(float)
 
     for h in holdings:
-        cost = h.shares * h.cost_per_share
-        total_cost += cost
-        if h.stock.last_price:
-            value = h.shares * h.stock.last_price
+        cur = h.stock.currency or "SGD"
+        total_cost += h.shares * to_sgd(h.cost_per_share, cur, rates)
+        price = to_sgd(h.stock.last_price, cur, rates)
+        if price:
+            value = h.shares * price
             total_value += value
             sector = h.stock.sector or "Other"
             sector_values[sector] += value
         if h.stock.annual_dividend_rate:
-            annual_income += h.shares * h.stock.annual_dividend_rate
+            annual_income += h.shares * to_sgd(h.stock.annual_dividend_rate, cur, rates)
 
     unrealised = total_value - total_cost
     unrealised_pct = (unrealised / total_cost) if total_cost else 0
@@ -117,6 +120,9 @@ async def get_portfolio_history(
     if not holdings:
         return []
 
+    rates = await load_rates(db)  # spot FX applied across all history (approximation)
+    ccy_by_stock = {h.stock_id: (h.stock.currency or "SGD") for h in holdings}
+
     stock_ids = list({h.stock_id for h in holdings})
     result = await db.execute(
         select(DailyPrice)
@@ -128,7 +134,7 @@ async def get_portfolio_history(
     price_map: dict[tuple[int, date], float] = {}
     all_dates: set[date] = set()
     for p in prices:
-        price_map[(p.stock_id, p.date)] = p.close_price
+        price_map[(p.stock_id, p.date)] = to_sgd(p.close_price, ccy_by_stock.get(p.stock_id), rates)
         all_dates.add(p.date)
 
     last_known: dict[int, float] = {}
@@ -176,6 +182,7 @@ async def get_portfolio_dividends(
         .order_by(Dividend.ex_date)
     )
     dividends = result.scalars().all()
+    rates = await load_rates(db)
 
     holding_map: dict[int, list[Holding]] = defaultdict(list)
     for h in holdings:
@@ -184,9 +191,10 @@ async def get_portfolio_dividends(
     monthly: dict[str, float] = defaultdict(float)
     for div in dividends:
         month_key = div.ex_date.strftime("%Y-%m")
+        amount_sgd = to_sgd(div.amount_per_share, div.currency, rates)
         for h in holding_map.get(div.stock_id, []):
             if h.purchase_date <= div.ex_date:
-                monthly[month_key] += div.amount_per_share * h.shares
+                monthly[month_key] += amount_sgd * h.shares
 
     return [
         MonthlyDividend(month=m, amount=round(a, 2))

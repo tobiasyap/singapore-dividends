@@ -27,6 +27,7 @@ from app.database import async_session
 from app.models.daily_price import DailyPrice
 from app.models.dividend import Dividend
 from app.models.stock import Stock
+from app.services.fx import refresh_fx_rates
 from app.services.beansprout_scraper import (
     fetch_dividends_from_beansprout,
     fetch_dividends_yahoo_chart,
@@ -304,6 +305,7 @@ async def upsert_dividends(db: AsyncSession, stock_id: int, dividends: list[dict
         index_elements=["stock_id", "ex_date"],
         set_={
             "amount_per_share": stmt.excluded.amount_per_share,
+            "currency": stmt.excluded.currency,
             "pay_date": func.coalesce(stmt.excluded.pay_date, Dividend.pay_date),
         },
     )
@@ -421,6 +423,10 @@ async def ingest_stock(
                     "ingest_stock: %s trades in %s -- amounts are NOT SGD", ticker, quote["currency"]
                 )
 
+    # Dividends are paid in the stock's listing currency.
+    for d in dividends:
+        d["currency"] = info.get("currency", "SGD")
+
     # Fill missing/blank frequency from the actual dividend cadence.
     if not info.get("dividend_frequency") and dividends:
         info["dividend_frequency"] = infer_frequency([d["ex_date"] for d in dividends])
@@ -501,6 +507,8 @@ async def refresh_all(
     prices: bool = True,
 ) -> dict:
     """Refresh every active stock. Intended for the scheduled job (Phase 2)."""
+    await refresh_fx_rates(db)
+
     rows = await db.execute(select(Stock).where(Stock.is_active.is_(True)))
     stocks = rows.scalars().all()
 
@@ -536,6 +544,8 @@ async def refresh_all(
 
             if dividends:
                 divs = await fetch_dividends(stock.ticker)
+                for d in divs:
+                    d["currency"] = stock.currency or "SGD"
                 await replace_dividends(db, stock.id, divs)
                 if not stock.dividend_frequency and divs:
                     stock.dividend_frequency = infer_frequency([d["ex_date"] for d in divs])

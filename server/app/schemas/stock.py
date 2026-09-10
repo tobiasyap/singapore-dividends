@@ -32,6 +32,7 @@ class StockSearchResult(BaseModel):
     ticker: str
     name: str
     sector: str | None
+    currency: str
     last_price: float | None
     forward_dividend_yield: float | None
     ttm_dividend_yield: float | None

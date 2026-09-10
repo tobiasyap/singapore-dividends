@@ -8,26 +8,20 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` dropped
 
 ---
 
-## Now — blocking
+## Done
 
-- [~] **Login broken.** Google OAuth popup step fails (backend `/google-token`,
-      DB, JWT all verified working; ~1 real account already exists). Need the
-      console error + confirm the OAuth client's Authorized JavaScript origins
-      include `http://localhost:5173`. Portfolio features (Dashboard, Holdings,
-      add-ticker) are unusable until this is fixed.
+- [x] ~~Login broken~~ — resolved (was transient / OAuth origin).
+- [x] **Multi-currency (Phase 4).** `fx_rates` table + `services/fx.py` (spot
+      USD/GBP/EUR→SGD from Yahoo, refreshed nightly). Stock/Browse views show
+      native currency + a badge; Holdings/Dashboard/portfolio convert to SGD at
+      spot with a note. Added the 12 excluded tickers — DB now 108 stocks
+      (96 SGD, 10 USD, 1 GBP, 1 EUR). Verified end to end.
+      - Known approximation: portfolio *history* chart uses today's rate for all
+        past dates (true historical FX is a later refinement).
+      - Minor: chart Y-axis ticks still show a bare `$` for non-SGD stocks.
 
 ## Next — high value
 
-- [ ] **Multi-currency support.** Needed to bring back the USD-denominated names
-      excluded from the seed: Hongkong Land (H78), Jardine Matheson (J36), DFI
-      Retail (D01), Hutchison Port Holdings Trust (NS8U), plus the US/UK/EU REITs
-      (Prime US, KORE US, United Hampshire, Elite UK, NTT DC, Digital Core,
-      Acrophyte, Stoneweg Europe).
-      - `ingest_stock` already stores the real `currency` from Yahoo.
-      - Need: currency-aware `formatCurrency` / `formatCompact` /
-        `formatDividendAmount` (show US$/£/€), a currency badge on the stock page,
-        and a decision on portfolio aggregation (block mixed-currency, or add FX).
-      - Then add those ~12 tickers to `seed_stocks.py` and re-seed.
 - [ ] **Replace the placeholder `JWT_SECRET`.** `server/.env` has
       `change-me-to...`. Generate a real one:
       `python -c "import secrets; print(secrets.token_hex(32))"`. (Invalidates
@@ -39,6 +33,8 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` dropped
       with a special (e.g. DBS 2023) shows an inflated bar in the annual DPS
       chart. Tag specials (size vs trailing median?) and either flag or exclude
       them from the "forward" calc.
+- [ ] **Historical FX** for the portfolio value chart (daily USDSGD/GBPSGD/EURSGD
+      series instead of today's spot for all history).
 
 ## Later — polish
 
@@ -73,6 +69,7 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` dropped
 | **1** | Unified data pipeline (`ingest.py`), Yahoo for prices+dividends, BeanSprout for profile, computed yields, full-precision storage, REIT payout nulled | #1, #2 |
 | **2** | GitHub Actions refresh (`scripts/refresh.py`), 5-year avg yield, async scraper, non-blocking add-holding, chart first-paint fix | #3, #4, #5, #7 |
 | **3** | 96-stock SGD dividend universe, currency capture, split refresh cadence | #6 |
-| — | Housekeeping: `dev.ps1`, off-peak cron | #8 |
+| **4** | Multi-currency: `fx_rates` + spot conversion, native currency on stock views, SGD on aggregates, +12 foreign tickers (108 total) | — |
+| — | Housekeeping: `dev.ps1`, off-peak cron, ROADMAP | #8, #9 |
 
-**Current phase:** post-Phase-3 — fixing login, then multi-currency.
+**Current phase:** post-Phase-4 — Dashboard chart fix + JWT secret next.

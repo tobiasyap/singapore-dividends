@@ -208,6 +208,7 @@ function AddLotInline({ ticker, onClose }: { ticker: string; onClose: () => void
 function AddTickerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [search, setSearch] = useState("");
   const [selectedTicker, setSelectedTicker] = useState("");
+  const [selectedCurrency, setSelectedCurrency] = useState("SGD");
   const [shares, setShares] = useState("");
   const [costPerShare, setCostPerShare] = useState("");
   const [purchaseDate, setPurchaseDate] = useState("");
@@ -222,7 +223,7 @@ function AddTickerModal({ open, onClose }: { open: boolean; onClose: () => void 
     if (!selectedTicker || !shares || !costPerShare || !purchaseDate) return;
     addMut.mutate(
       { ticker: selectedTicker, shares: Number(shares), cost_per_share: Number(costPerShare), purchase_date: purchaseDate, notes: notes || undefined },
-      { onSuccess: () => { onClose(); setSearch(""); setSelectedTicker(""); setShares(""); setCostPerShare(""); setPurchaseDate(""); setNotes(""); } },
+      { onSuccess: () => { onClose(); setSearch(""); setSelectedTicker(""); setSelectedCurrency("SGD"); setShares(""); setCostPerShare(""); setPurchaseDate(""); setNotes(""); } },
     );
   }
 
@@ -239,8 +240,9 @@ function AddTickerModal({ open, onClose }: { open: boolean; onClose: () => void 
           {search && !selectedTicker && results.length > 0 && (
             <div className="mt-1 rounded-lg overflow-hidden max-h-[160px] overflow-y-auto" style={{ background: "var(--surface-alt)", border: "1px solid var(--border)" }}>
               {results.slice(0, 8).map((s) => (
-                <button key={s.id} className="w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--accent-s)] flex justify-between" onClick={() => { setSelectedTicker(s.ticker); setSearch(""); }}>
+                <button key={s.id} className="w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--accent-s)] flex justify-between" onClick={() => { setSelectedTicker(s.ticker); setSelectedCurrency(s.currency || "SGD"); setSearch(""); }}>
                   <span><span className="font-bold" style={{ color: "var(--accent)" }}>{s.ticker}</span> {s.name}</span>
+                  {s.currency && s.currency !== "SGD" && <span style={{ color: "var(--text-3)" }}>{s.currency}</span>}
                 </button>
               ))}
             </div>
@@ -253,7 +255,7 @@ function AddTickerModal({ open, onClose }: { open: boolean; onClose: () => void 
             <input type="number" placeholder="e.g. 1000" value={shares} onChange={(e) => setShares(e.target.value)} className="w-full py-2.5 px-3 rounded-lg text-[13.5px] outline-none" style={inputStyle} />
           </div>
           <div>
-            <label className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-2)" }}>Cost / share (SGD)</label>
+            <label className="block text-[12px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-2)" }}>Cost / share ({selectedCurrency})</label>
             <input type="number" step="0.01" placeholder="e.g. 35.50" value={costPerShare} onChange={(e) => setCostPerShare(e.target.value)} className="w-full py-2.5 px-3 rounded-lg text-[13.5px] outline-none" style={inputStyle} />
           </div>
         </div>
@@ -302,12 +304,15 @@ export function HoldingsPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-1.5">
         <h1 className="text-[22px] font-bold tracking-tight">Holdings</h1>
         <button onClick={() => setModalOpen(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: "var(--accent)" }}>
           <Plus size={16} /> Add Ticker
         </button>
       </div>
+      <p className="text-[11.5px] mb-5" style={{ color: "var(--text-3)" }}>
+        All values in SGD. Foreign-currency holdings are converted at today's rate.
+      </p>
 
       <div className="rounded-[10px] overflow-x-auto" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
         <table className="w-full border-collapse" style={{ fontVariantNumeric: "tabular-nums", fontSize: "13px" }}>
