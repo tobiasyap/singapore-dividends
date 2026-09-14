@@ -1,0 +1,53 @@
+name: Check nightly refresh
+
+# GitHub's cron scheduler runs on a best-effort basis and can silently skip a
+# trigger entirely (not just delay it) -- refresh-data.yml's own comment
+# already documents multi-hour delays as normal. This runs well after that
+# schedule's trigger time and, if no successful refresh landed today, fires
+# one via workflow_dispatch. refresh-data.yml's `concurrency` group makes
+# this safe even if the original run was just late rather than dropped.
+
+on:
+  schedule:
+    - cron: "17 15 * * *" # ~5h after refresh-data.yml's 10:17 UTC trigger
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify today's refresh succeeded, rerun if it didn't
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TODAY=$(date -u +%F)
+          DOW=$(date -u +%u) # 1=Mon .. 7=Sun
+
+          SUCCESS=$(gh run list --repo "$REPO" --workflow=refresh-data.yml \
+            --json conclusion,createdAt \
+            --jq "[.[] | select(.createdAt | startswith(\"$TODAY\")) | select(.conclusion == \"success\")] | length")
+
+          if [ "$SUCCESS" -gt 0 ]; then
+            echo "Today's refresh already succeeded ($SUCCESS run(s)). Nothing to do."
+            exit 0
+          fi
+
+          IN_FLIGHT=$(gh run list --repo "$REPO" --workflow=refresh-data.yml \
+            --json status,createdAt \
+            --jq "[.[] | select(.createdAt | startswith(\"$TODAY\")) | select(.status == \"in_progress\" or .status == \"queued\")] | length")
+
+          if [ "$IN_FLIGHT" -gt 0 ]; then
+            echo "A refresh run for today is already in progress/queued. Leaving it alone."
+            exit 0
+          fi
+
+          MODE="prices"
+          if [ "$DOW" = "7" ]; then MODE="full"; fi
+
+          echo "No successful refresh found for $TODAY -- triggering a fallback run (mode=$MODE)."
+          gh workflow run refresh-data.yml --repo "$REPO" -f mode="$MODE"
