@@ -41,3 +41,4 @@ class GroupedHolding(BaseModel):
     market_value: float | None
     dividends_received: float
     lots: list[HoldingResponse]
+    sparkline: list[float] | None = None  # last ~30 days of closes, oldest->newest

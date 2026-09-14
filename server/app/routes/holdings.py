@@ -22,6 +22,7 @@ from app.schemas.holding import (
 from app.schemas.stock import StockResponse
 from app.services.fx import load_rates, to_sgd
 from app.services.ingest import backfill_prices, ingest_stock
+from app.services.prices import get_recent_closes
 
 router = APIRouter(prefix="/api/holdings", tags=["holdings"])
 
@@ -114,6 +115,8 @@ async def get_holdings(
     for h in holdings:
         grouped[h.stock_id].append(h)
 
+    sparklines = await get_recent_closes(db, stock_ids)
+
     out: list[GroupedHolding] = []
     for stock_id, lots in grouped.items():
         stock = lots[0].stock
@@ -150,6 +153,7 @@ async def get_holdings(
                 market_value=round(market_value, 2) if market_value else None,
                 dividends_received=round(group_divs, 2),
                 lots=lot_responses,
+                sparkline=sparklines.get(stock_id),
             )
         )
 

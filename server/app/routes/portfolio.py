@@ -188,15 +188,25 @@ async def get_portfolio_dividends(
     for h in holdings:
         holding_map[h.stock_id].append(h)
 
-    monthly: dict[str, float] = defaultdict(float)
+    # Zero-fill all 12 calendar months so the chart always shows a full
+    # trailing year, not just the months that happened to pay a dividend.
+    today = date.today()
+    month_keys: list[str] = []
+    for i in range(11, -1, -1):
+        y, m = today.year, today.month - i
+        while m <= 0:
+            m += 12
+            y -= 1
+        month_keys.append(f"{y:04d}-{m:02d}")
+
+    monthly: dict[str, float] = {k: 0.0 for k in month_keys}
     for div in dividends:
         month_key = div.ex_date.strftime("%Y-%m")
+        if month_key not in monthly:
+            continue
         amount_sgd = to_sgd(div.amount_per_share, div.currency, rates)
         for h in holding_map.get(div.stock_id, []):
             if h.purchase_date <= div.ex_date:
                 monthly[month_key] += amount_sgd * h.shares
 
-    return [
-        MonthlyDividend(month=m, amount=round(a, 2))
-        for m, a in sorted(monthly.items())
-    ]
+    return [MonthlyDividend(month=m, amount=round(monthly[m], 2)) for m in month_keys]

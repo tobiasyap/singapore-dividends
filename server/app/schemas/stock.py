@@ -37,6 +37,7 @@ class StockSearchResult(BaseModel):
     forward_dividend_yield: float | None
     ttm_dividend_yield: float | None
     market_cap: int | None
+    sparkline: list[float] | None = None  # last ~30 days of closes, oldest->newest
 
     model_config = {"from_attributes": True}
 

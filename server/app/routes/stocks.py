@@ -14,6 +14,7 @@ from app.schemas.stock import (
     StockResponse,
     StockSearchResult,
 )
+from app.services.prices import get_recent_closes
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
@@ -34,7 +35,13 @@ async def search_stocks(
         stmt = stmt.where(Stock.sector == sector)
     stmt = stmt.order_by(Stock.market_cap.desc().nulls_last()).limit(500)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    stocks = result.scalars().all()
+
+    sparklines = await get_recent_closes(db, [s.id for s in stocks])
+    return [
+        StockSearchResult.model_validate(s).model_copy(update={"sparkline": sparklines.get(s.id)})
+        for s in stocks
+    ]
 
 
 @router.get("/{ticker}", response_model=StockResponse)
