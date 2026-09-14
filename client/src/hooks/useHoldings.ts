@@ -10,6 +10,7 @@ export interface GroupedHolding {
   market_value: number | null;
   dividends_received: number;
   lots: (Holding & { dividends_received: number })[];
+  sparkline: number[] | null;
 }
 
 interface HoldingCreate {

@@ -12,12 +12,21 @@ function sym(currency: string): string {
 export function formatCurrency(
   value: number | null | undefined,
   currency = "SGD",
+  decimals = 2,
 ): string {
   if (value == null) return "—";
   return `${sym(currency)}${value.toLocaleString("en-SG", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   })}`;
+}
+
+/** Whole-dollar variant for portfolio-level aggregate figures (total value, total cost, etc.) -- industry convention is to drop cents at that scale and keep them only for per-unit prices. */
+export function formatCurrencyWhole(
+  value: number | null | undefined,
+  currency = "SGD",
+): string {
+  return formatCurrency(value, currency, 0);
 }
 
 export function formatPercent(value: number | null | undefined): string {
@@ -60,6 +69,31 @@ export function formatDate(dateStr: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+/**
+ * Chart axis label for a date, scaled to how wide a range `period` covers --
+ * short ranges don't need a year, long ones do, or two Januaries a few ticks
+ * apart are indistinguishable.
+ */
+export function formatChartDate(dateStr: string, period: string): string {
+  const d = new Date(dateStr);
+  if (period === "1m") {
+    return d.toLocaleDateString("en-SG", { day: "numeric", month: "short" });
+  }
+  if (period === "3m" || period === "6m" || period === "1y") {
+    return d.toLocaleDateString("en-SG", { month: "short", year: "2-digit" });
+  }
+  return d.toLocaleDateString("en-SG", { month: "short", year: "numeric" });
+}
+
+/** Recharts tick spacing that thins out to roughly one label per N points, so a long range doesn't cram in an unreadable label per data point. */
+export function getTickInterval(period: string, dataLength: number): number {
+  if (period === "1m") return Math.max(1, Math.floor(dataLength / 10));
+  if (period === "3m") return Math.max(1, Math.floor(dataLength / 6));
+  if (period === "1y") return Math.max(1, Math.floor(dataLength / 8));
+  if (period === "5y") return Math.max(1, Math.floor(dataLength / 10));
+  return Math.max(1, Math.floor(dataLength / 10));
 }
 
 export function cn(...classes: (string | false | null | undefined)[]): string {

@@ -28,21 +28,25 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<LandingPage />} />
-            <Route path="/stocks" element={<AppShell />}>
-              <Route index element={<BrowseStocksPage />} />
-            </Route>
-            <Route path="/stock/:ticker" element={<AppShell />}>
-              <Route index element={<StockDetailPage />} />
-            </Route>
-            <Route
-              element={
-                <ProtectedRoute>
-                  <AppShell />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/holdings" element={<HoldingsPage />} />
+            <Route element={<AppShell />}>
+              <Route path="/stocks" element={<BrowseStocksPage />} />
+              <Route path="/stock/:ticker" element={<StockDetailPage />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/holdings"
+                element={
+                  <ProtectedRoute>
+                    <HoldingsPage />
+                  </ProtectedRoute>
+                }
+              />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

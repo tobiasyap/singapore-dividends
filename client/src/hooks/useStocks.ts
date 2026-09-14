@@ -12,6 +12,7 @@ interface StockSearchResult {
   forward_dividend_yield: number | null;
   ttm_dividend_yield: number | null;
   market_cap: number | null;
+  sparkline: number[] | null;
 }
 
 interface PricePoint {

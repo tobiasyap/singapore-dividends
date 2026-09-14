@@ -3,32 +3,15 @@ import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Info } from "lucide-react";
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart, ComposedChart, Bar, Line } from "recharts";
 import { useStock, useStockDividends, useStockPrices } from "../hooks/useStocks";
-import { formatCurrency, formatPercent, formatCompact, formatDate, formatDividendAmount } from "../lib/utils";
+import { formatCurrency, formatPercent, formatCompact, formatDate, formatDividendAmount, formatChartDate, getTickInterval } from "../lib/utils";
+import { useUiStore } from "../stores/uiStore";
 
 const PERIODS = ["1m", "3m", "1y", "5y", "10y", "max"] as const;
-
-function formatChartDate(dateStr: string, period: string): string {
-  const d = new Date(dateStr);
-  if (period === "1m") {
-    return d.toLocaleDateString("en-SG", { day: "numeric", month: "short" });
-  }
-  if (period === "3m" || period === "6m" || period === "1y") {
-    return d.toLocaleDateString("en-SG", { month: "short", year: "2-digit" });
-  }
-  return d.toLocaleDateString("en-SG", { month: "short", year: "numeric" });
-}
-
-function getTickInterval(period: string, dataLength: number): number {
-  if (period === "1m") return Math.max(1, Math.floor(dataLength / 10));
-  if (period === "3m") return Math.max(1, Math.floor(dataLength / 6));
-  if (period === "1y") return Math.max(1, Math.floor(dataLength / 8));
-  if (period === "5y") return Math.max(1, Math.floor(dataLength / 10));
-  return Math.max(1, Math.floor(dataLength / 10));
-}
 
 export function StockDetailPage() {
   const { ticker } = useParams<{ ticker: string }>();
   const [period, setPeriod] = useState<string>("1y");
+  const openAddHolding = useUiStore((s) => s.openAddHolding);
 
   const { data: stock, isLoading } = useStock(ticker || "");
   const { data: dividends = [] } = useStockDividends(ticker || "");
@@ -40,14 +23,16 @@ export function StockDetailPage() {
   }
 
   const ccy = stock.currency || "SGD";
-  const metrics = [
-    { label: "Forward Yield", value: formatPercent(stock.forward_dividend_yield), color: "var(--dvd)" },
-    { label: "TTM Yield", value: formatPercent(stock.ttm_dividend_yield), color: "var(--dvd)" },
-    { label: "5Y Avg Yield", value: formatPercent(stock.five_year_avg_yield), color: "var(--dvd)" },
-    { label: "Dividend/Share", value: stock.annual_dividend_rate ? formatDividendAmount(stock.annual_dividend_rate, ccy) : "—" },
+  const primaryStats = [
+    { label: "Forward Yield", value: formatPercent(stock.forward_dividend_yield) },
+    { label: "TTM Yield", value: formatPercent(stock.ttm_dividend_yield) },
+    { label: "5Y Avg Yield", value: formatPercent(stock.five_year_avg_yield) },
+    { label: "Dividend/Share", value: stock.annual_dividend_rate ? formatDividendAmount(stock.annual_dividend_rate, ccy) : "—", color: "var(--dvd)" },
     { label: "Payout Ratio", value: stock.payout_ratio ? `${(stock.payout_ratio * 100).toFixed(1)}%` : "—" },
-    { label: "Frequency", value: stock.dividend_frequency || "—", small: true },
-    { label: "Market Cap", value: formatCompact(stock.market_cap, ccy), small: true },
+  ];
+  const secondaryStats = [
+    { label: "Frequency", value: stock.dividend_frequency || "—" },
+    { label: "Market Cap", value: formatCompact(stock.market_cap, ccy) },
     { label: "P/E Ratio", value: stock.pe_ratio ? stock.pe_ratio.toFixed(1) : "—" },
   ];
 
@@ -74,24 +59,34 @@ export function StockDetailPage() {
             {stock.sector} · {stock.industry} · SGX
           </p>
         </div>
-        <button className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: "var(--accent)" }}>
+        <button
+          onClick={() => openAddHolding(stock.ticker)}
+          className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white shrink-0"
+          style={{ background: "var(--accent)" }}
+        >
           + Add to Portfolio
         </button>
       </div>
 
-      <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
-        {metrics.map((m) => (
-          <div key={m.label} className="rounded-[10px] px-4 py-3.5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+      <div className="flex flex-wrap gap-x-8 gap-y-3 mb-3">
+        {primaryStats.map((m) => (
+          <div key={m.label}>
             <div className="text-[10.5px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-3)" }}>{m.label}</div>
-            <div className={`font-bold ${m.small ? "text-[15px]" : "text-[18px]"}`} style={{ fontVariantNumeric: "tabular-nums", color: m.color }}>
-              {m.value}
-            </div>
+            <div className="text-[17px] font-bold tabular-nums" style={{ fontFamily: "var(--font-display)", color: m.color }}>{m.value}</div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-8 gap-y-3 mb-6">
+        {secondaryStats.map((m) => (
+          <div key={m.label}>
+            <div className="text-[10.5px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-3)" }}>{m.label}</div>
+            <div className="text-[14px] font-bold tabular-nums" style={{ fontFamily: "var(--font-display)" }}>{m.value}</div>
           </div>
         ))}
       </div>
 
-      <div className="rounded-[10px] p-5 mb-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-        <div className="text-[13px] font-semibold mb-1">Price History</div>
+      <div className="mb-8">
+        <div className="text-[14.5px] font-bold mb-1" style={{ fontFamily: "var(--font-display)" }}>Price History</div>
         <div className="flex gap-0.5 mb-4">
           {PERIODS.map((p) => (
             <button
@@ -153,11 +148,11 @@ export function StockDetailPage() {
           });
 
         return (
-          <div className="rounded-[10px] p-5 mb-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          <div className="mb-8">
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-start gap-1.5">
                 <div>
-                  <div className="text-[13px] font-semibold mb-1">Dividends Per Share</div>
+                  <div className="text-[14.5px] font-bold mb-1" style={{ fontFamily: "var(--font-display)" }}>Dividends Per Share</div>
                   <div className="text-[11.5px]" style={{ color: "var(--text-3)" }}>
                     Annual · {currentYear} is year-to-date
                   </div>
@@ -204,9 +199,38 @@ export function StockDetailPage() {
         );
       })()}
 
+      <div className="mb-8">
+        <div className="mb-4">
+          <div className="text-[14.5px] font-bold" style={{ fontFamily: "var(--font-display)" }}>Dividend History</div>
+          <div className="text-[11.5px]" style={{ color: "var(--text-3)" }}>{dividends.length} payouts</div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse" style={{ fontVariantNumeric: "tabular-nums", fontSize: "12.5px" }}>
+            <thead>
+              <tr>
+                {["Ex-Date", "Pay Date", "Amount/Share"].map((h, i) => (
+                  <th key={h} className={`text-left px-3 py-2.5 font-semibold uppercase tracking-wide ${i === 2 ? "text-right" : ""}`} style={{ fontSize: "10.5px", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dividends.slice(0, 20).map((d) => (
+                <tr key={d.id} style={{ borderBottom: "1px solid var(--border-s)" }}>
+                  <td className="px-3 py-2.5">{formatDate(d.ex_date)}</td>
+                  <td className="px-3 py-2.5">{d.pay_date ? formatDate(d.pay_date) : "—"}</td>
+                  <td className="px-3 py-2.5 text-right font-semibold" style={{ color: "var(--dvd)" }}>{formatDividendAmount(d.amount_per_share, d.currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {stock.description && (
-        <div className="rounded-[10px] p-5 mb-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-          <div className="text-[13px] font-semibold mb-2">About {stock.name}</div>
+        <div>
+          <div className="text-[14.5px] font-bold mb-2" style={{ fontFamily: "var(--font-display)" }}>About {stock.name}</div>
           <p className="text-[13px] leading-relaxed" style={{ color: "var(--text-2)" }}>{stock.description}</p>
           {(stock.website || stock.address) && (
             <p className="text-[12px] mt-2" style={{ color: "var(--text-3)" }}>
@@ -217,33 +241,6 @@ export function StockDetailPage() {
           )}
         </div>
       )}
-
-      <div className="rounded-[10px] overflow-hidden" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-        <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
-          <div className="text-[13px] font-semibold">Dividend History</div>
-          <div className="text-[11.5px]" style={{ color: "var(--text-3)" }}>{dividends.length} payouts</div>
-        </div>
-        <table className="w-full border-collapse" style={{ fontVariantNumeric: "tabular-nums", fontSize: "12.5px" }}>
-          <thead>
-            <tr>
-              {["Ex-Date", "Pay Date", "Amount/Share"].map((h, i) => (
-                <th key={h} className={`text-left px-4 py-2.5 font-semibold uppercase tracking-wide ${i === 2 ? "text-right" : ""}`} style={{ fontSize: "10.5px", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {dividends.slice(0, 20).map((d) => (
-              <tr key={d.id} style={{ borderBottom: "1px solid var(--border-s)" }}>
-                <td className="px-4 py-2.5">{formatDate(d.ex_date)}</td>
-                <td className="px-4 py-2.5">{d.pay_date ? formatDate(d.pay_date) : "—"}</td>
-                <td className="px-4 py-2.5 text-right font-semibold" style={{ color: "var(--dvd)" }}>{formatDividendAmount(d.amount_per_share, d.currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
