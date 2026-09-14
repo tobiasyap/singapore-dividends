@@ -50,4 +50,7 @@ jobs:
           if [ "$DOW" = "7" ]; then MODE="full"; fi
 
           echo "No successful refresh found for $TODAY -- triggering a fallback run (mode=$MODE)."
-          gh workflow run refresh-data.yml --repo "$REPO" -f mode="$MODE"
+          # --ref is required: gh otherwise resolves the default branch via a
+          # GraphQL call the built-in GITHUB_TOKEN isn't allowed to make, even
+          # though the actions:write permission needed to dispatch is fine.
+          gh workflow run refresh-data.yml --repo "$REPO" --ref "${{ github.ref_name }}" -f mode="$MODE"
