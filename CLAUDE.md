@@ -36,10 +36,16 @@ seed scripts *and* the API add-ticker path. See DEVLOG.md for the full design.
 - **Yahoo Chart API** (`query1.finance.yahoo.com/v8/finance/chart/`): prices AND
   dividends (`events=div`, `range=max`) AND `last_price` (latest close). Send
   `Accept: application/json` or you get 406.
-- **BeanSprout** (growbeansprout.com): company profile only (name, sector, industry,
-  description, website, market cap, PE, frequency). SvelteKit inline-JS, regex-extracted.
-  Its scraped price/yield are unreliable (embedded peer table) — don't use them.
-  REITs lack `sectorName` — detect via `realEstateInvestmentTrust`.
+- **BeanSprout** (growbeansprout.com): company profile (name, sector, industry,
+  description, website, market cap, PE, frequency) *and* dividend pay-dates —
+  Yahoo's dividend events carry no payment date, so `ingest.fetch_dividends()`
+  matches BeanSprout's pay-dates onto Yahoo's ex-dates/amounts by ex-date.
+  BeanSprout dividend amounts are only used as a full fallback if Yahoo returns
+  nothing for a ticker (confirmed 2026-09-16: doesn't currently happen for any
+  of the 108 stocks — Yahoo has amounts for all of them). SvelteKit inline-JS,
+  regex-extracted. Its scraped price/yield are unreliable (embedded peer
+  table) — don't use them. REITs lack `sectorName` — detect via
+  `realEstateInvestmentTrust`.
 - **yfinance** (`app/services/yfinance_source.py`): optional fallback only, rate-limited.
 - Yields/rates are **computed** from dividend history (`compute_dividend_metrics`), not scraped.
 - Incremental price updates: `ingest.ingest_prices()` checks latest date in DB, fetches only the gap.
