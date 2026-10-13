@@ -85,11 +85,22 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` dropped
 - [ ] `website` / `address` null for REITs — BeanSprout doesn't carry it. Skip,
       or a small hardcoded map (only if it's worth it — no fabricated data).
 
-## Deployment — not started
+## Deployment — live
 
-- [ ] Frontend → Vercel, backend → Render (per original plan). Env vars, CORS
-      origins, the OAuth client's production origins, and switch the refresh
-      job's `DATABASE_URL` handling if moving to a gated endpoint.
+- [x] **Frontend → Vercel, backend → Render.** Live 2026-10-14:
+      https://singapore-dividends.vercel.app (Vercel, root `client/`,
+      `client/vercel.json` SPA fallback) and
+      https://singapore-dividends-api.onrender.com (Render Blueprint from
+      `render.yaml`, Singapore region, free plan, Render-generated
+      `JWT_SECRET`). `CORS_ORIGINS` = the Vercel domain only. Every push to
+      `main` redeploys both. The nightly refresh is unchanged: GitHub Actions
+      writes straight to Neon, no backend involved.
+- [ ] **Separate dev database.** Local dev and the live site share one Neon
+      DB, so anything done locally (test holdings, add-ticker experiments)
+      hits live data. Create a Neon branch for dev before real users arrive.
+- [ ] **Render free tier sleeps after 15 min idle** (~50s cold start on the
+      next visit). Fine for now; the $7/mo plan keeps it warm if first-visit
+      latency matters at launch.
 - [ ] **Replace GitHub Actions' `schedule` trigger with Render's native Cron
       Job** hitting the `cron_secret`-gated refresh endpoint. Investigated
       2026-09-15: GH's schedule event is consistently 3-6h late *every day*
