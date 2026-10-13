@@ -11,7 +11,7 @@ export function Sparkline({ values, width = 56, height = 22 }: { values: number[
       return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
-  const trendUp = values[values.length - 1] >= values[0];
+  const trendUp = values[values.length - 1]! >= values[0]!;
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>

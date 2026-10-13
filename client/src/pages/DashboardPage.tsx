@@ -18,7 +18,7 @@ function dailyDelta(spark: number[] | null | undefined): number | null {
   if (!spark || spark.length < 2) return null;
   const prev = spark[spark.length - 2];
   if (!prev) return null;
-  return (spark[spark.length - 1] - prev) / prev;
+  return (spark[spark.length - 1]! - prev) / prev;
 }
 
 export function DashboardPage() {
@@ -76,7 +76,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_340px] gap-5 py-6 border-b" style={{ borderColor: "var(--grid)" }}>
+      <div className="grid grid-cols-1 md:grid-cols-[1.5fr_1fr] gap-5 py-6 border-b" style={{ borderColor: "var(--grid)" }}>
         {/* Portfolio value chart */}
         <div>
           <div className="text-[14.5px] font-bold mb-1" style={{ fontFamily: "var(--font-display)" }}>Portfolio Value</div>
@@ -110,7 +110,7 @@ export function DashboardPage() {
             Last 12 months
           </div>
           {monthlyDivs.length > 0 ? (
-            <ResponsiveContainer width="100%" height={140}>
+            <ResponsiveContainer width="100%" height={180}>
               <BarChart data={monthlyDivs}>
                 <XAxis dataKey="month" tick={{ fontSize: 9.5, fill: "var(--text-3)" }} tickFormatter={(v) => new Date(v + "-01").toLocaleDateString("en-SG", { month: "short" })} interval={0} />
                 <YAxis tick={{ fontSize: 9.5, fill: "var(--text-3)" }} tickFormatter={(v) => `$${v}`} width={36} />
